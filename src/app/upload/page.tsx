@@ -30,7 +30,15 @@ type Uploaded = {
   hasExif: boolean;
   exifFieldCount: number;
   exifKeys?: string[];
-  timestampSource: "exif" | "gps" | "filename" | "mtime" | null;
+  timestampSource: "exif" | "gps" | "filename" | "mtime" | "overlay" | null;
+  gpsSource: "exif" | "overlay" | null;
+  overlayApp: string | null;
+  overlayLatitude: number | null;
+  overlayLongitude: number | null;
+  overlayAddress: string | null;
+  overlayTakenAt: string | null;
+  overlayFound: boolean;
+  overlayDetected: boolean;
 };
 
 type Skipped = { name: string; reason: string };
@@ -351,11 +359,11 @@ export default function UploadPage() {
                 <th></th>
                 <th>File</th>
                 <th>Metadata</th>
+                <th>Overlay</th>
                 <th>Taken</th>
                 <th>Latitude</th>
                 <th>Longitude</th>
                 <th>Camera / lens</th>
-                <th>Exposure</th>
                 <th>Source</th>
               </tr>
             </thead>
@@ -378,6 +386,20 @@ export default function UploadPage() {
                     ) : null}
                   </td>
                   <td>{renderMetadataBadge(r)}</td>
+                  <td>
+                    {r.overlayApp || r.overlayDetected ? (
+                      <>
+                        <div className="dim">{r.overlayApp ?? "detected"}</div>
+                        {r.overlayAddress ? (
+                          <div className="filename" title={r.overlayAddress}>
+                            {r.overlayAddress}
+                          </div>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </td>
                   <td>
                     {r.takenAt ? (
                       <>
@@ -408,15 +430,15 @@ export default function UploadPage() {
                     {r.lensModel ? <div className="dim">{r.lensModel}</div> : null}
                     {r.software ? <div className="dim">{r.software}</div> : null}
                   </td>
-                  <td>
-                    {formatExposure(r)}
-                  </td>
                   <td title={r.sourcePath}>
                     <div className="filename muted">
                       {r.sourcePath && r.sourcePath !== r.originalName
                         ? r.sourcePath
                         : "—"}
                     </div>
+                    {formatExposure(r) !== "—" ? (
+                      <div className="dim">{formatExposure(r)}</div>
+                    ) : null}
                   </td>
                 </tr>
               ))}
@@ -444,27 +466,44 @@ export default function UploadPage() {
 }
 
 function renderMetadataBadge(r: Uploaded) {
-  // 3-state: GPS found / EXIF only / nothing at all.
-  const keys = r.exifKeys ?? [];
-  const tooltip = keys.length
-    ? `${keys.length} fields: ${keys.slice(0, 40).join(", ")}${keys.length > 40 ? ", …" : ""}`
-    : "No EXIF, XMP, IPTC or PNG metadata found";
-  if (r.hasGps) {
+  // Composite badge — overlay status (audit source) + EXIF status. The overlay
+  // is the primary GPS signal; EXIF is the fallback.
+  if (r.gpsSource === "overlay") {
     return (
-      <span className="badge ok" title={tooltip}>
-        GPS · {r.exifFieldCount}
+      <span
+        className="badge ok"
+        title={`Overlay parsed${r.overlayApp ? ` from ${r.overlayApp}` : ""}`}
+      >
+        GPS · overlay
+      </span>
+    );
+  }
+  if (r.gpsSource === "exif") {
+    return (
+      <span className="badge warn" title="No readable overlay — falling back to EXIF GPS">
+        GPS · EXIF
+      </span>
+    );
+  }
+  if (r.overlayDetected) {
+    return (
+      <span
+        className="badge warn"
+        title="An overlay was detected on the image but its coordinates were not parseable from OCR"
+      >
+        overlay · unreadable
       </span>
     );
   }
   if (r.hasExif) {
     return (
-      <span className="badge warn" title={tooltip}>
-        EXIF · {r.exifFieldCount} · no GPS
+      <span className="badge warn" title={`${r.exifFieldCount} EXIF fields, no GPS`}>
+        EXIF · no GPS
       </span>
     );
   }
   return (
-    <span className="badge err" title={tooltip}>
+    <span className="badge err" title="No overlay, no EXIF — image has no extractable metadata">
       no metadata
     </span>
   );
@@ -472,6 +511,8 @@ function renderMetadataBadge(r: Uploaded) {
 
 function tsSourceLabel(source: Uploaded["timestampSource"]) {
   switch (source) {
+    case "overlay":
+      return "from overlay OCR";
     case "exif":
       return "from EXIF";
     case "gps":

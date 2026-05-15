@@ -10,6 +10,7 @@ import {
   loadIndex,
   type PhotoRecord,
 } from "@/lib/store";
+import { extractOverlay } from "@/lib/overlayOcr";
 
 export const runtime = "nodejs";
 
@@ -96,11 +97,11 @@ async function processImage(opts: {
         .map(([k]) => k)
     : [];
 
-  // GPS — first from the merged parse, then a second pass with the dedicated
-  // exifr.gps() helper which is sometimes more forgiving with malformed files.
-  let lat = num(meta?.latitude);
-  let lon = num(meta?.longitude);
-  if (lat === null || lon === null) {
+  // EXIF GPS — first from the merged parse, then a second pass with the
+  // dedicated exifr.gps() helper.
+  let exifLat = num(meta?.latitude);
+  let exifLon = num(meta?.longitude);
+  if (exifLat === null || exifLon === null) {
     try {
       const gps = await exifr.gps(buf);
       if (
@@ -108,28 +109,47 @@ async function processImage(opts: {
         typeof gps.latitude === "number" &&
         typeof gps.longitude === "number"
       ) {
-        lat = gps.latitude;
-        lon = gps.longitude;
+        exifLat = gps.latitude;
+        exifLon = gps.longitude;
       }
     } catch {
       // ignore
     }
   }
 
-  // Timestamp resolution: prefer EXIF capture time, then GPS-stamp, then
-  // filename pattern, then the file's lastModified handed to us by the client
-  // (or the zip entry mtime).
+  // Overlay OCR — always run, since the overlay is the audit-grade source
+  // even when EXIF is present. Stored as overlay* fields and used as the
+  // *primary* coordinate source when present, with EXIF as the fallback.
+  const overlay = await extractOverlay(buf).catch(() => null);
+
+  const lat = overlay?.latitude ?? exifLat;
+  const lon = overlay?.longitude ?? exifLon;
+  const gpsSource: PhotoRecord["gpsSource"] =
+    overlay?.latitude != null && overlay?.longitude != null
+      ? "overlay"
+      : exifLat !== null && exifLon !== null
+        ? "exif"
+        : null;
+
+  // Timestamp resolution: overlay first (audit source), then EXIF capture
+  // time, GPS-stamp, filename, file mtime.
   let takenAt: string | null = null;
   let timestampSource: PhotoRecord["timestampSource"] = null;
 
-  const exifTime =
-    (meta?.DateTimeOriginal as Date | undefined) ||
-    (meta?.CreateDate as Date | undefined) ||
-    (meta?.DateTime as Date | undefined) ||
-    (meta?.ModifyDate as Date | undefined);
-  if (exifTime instanceof Date && !Number.isNaN(exifTime.getTime())) {
-    takenAt = exifTime.toISOString();
-    timestampSource = "exif";
+  if (overlay?.takenAt) {
+    takenAt = overlay.takenAt;
+    timestampSource = "overlay";
+  }
+  if (!takenAt) {
+    const exifTime =
+      (meta?.DateTimeOriginal as Date | undefined) ||
+      (meta?.CreateDate as Date | undefined) ||
+      (meta?.DateTime as Date | undefined) ||
+      (meta?.ModifyDate as Date | undefined);
+    if (exifTime instanceof Date && !Number.isNaN(exifTime.getTime())) {
+      takenAt = exifTime.toISOString();
+      timestampSource = "exif";
+    }
   }
   if (!takenAt) {
     const gpsStamp = meta?.GPSDateStamp;
@@ -192,6 +212,14 @@ async function processImage(opts: {
     hasExif: exifKeys.length > 0,
     exifFieldCount: exifKeys.length,
     exifKeys,
+    gpsSource,
+    overlayApp: overlay?.app ?? null,
+    overlayLatitude: overlay?.latitude ?? null,
+    overlayLongitude: overlay?.longitude ?? null,
+    overlayAddress: overlay?.address ?? null,
+    overlayTakenAt: overlay?.takenAt ?? null,
+    overlayFound: overlay?.found ?? false,
+    overlayDetected: overlay?.detected ?? false,
   };
 }
 

@@ -31,7 +31,15 @@ export type PhotoRecord = {
   hasExif: boolean;
   exifFieldCount: number;
   exifKeys?: string[];
-  timestampSource: "exif" | "gps" | "filename" | "mtime" | null;
+  timestampSource: "exif" | "gps" | "filename" | "mtime" | "overlay" | null;
+  gpsSource: "exif" | "overlay" | null;
+  overlayApp: string | null;
+  overlayLatitude: number | null;
+  overlayLongitude: number | null;
+  overlayAddress: string | null;
+  overlayTakenAt: string | null;
+  overlayFound: boolean;
+  overlayDetected: boolean;
 };
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
