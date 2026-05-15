@@ -289,7 +289,6 @@ export default function UploadPage() {
                 <th>Taken</th>
                 <th>Latitude</th>
                 <th>Longitude</th>
-                <th>Camera / lens</th>
                 <th>Source</th>
               </tr>
             </thead>
@@ -345,23 +344,9 @@ export default function UploadPage() {
                   </td>
                   <td className={r.hasGps ? "" : "muted"}>
                     {r.latitude != null ? r.latitude.toFixed(5) : "—"}
-                    {r.gpsAccuracy != null ? (
-                      <div className="dim">±{r.gpsAccuracy.toFixed(1)} m</div>
-                    ) : null}
                   </td>
                   <td className={r.hasGps ? "" : "muted"}>
                     {r.longitude != null ? r.longitude.toFixed(5) : "—"}
-                    {r.altitude != null ? (
-                      <div className="dim">{r.altitude.toFixed(0)} m alt</div>
-                    ) : null}
-                  </td>
-                  <td>
-                    <div>
-                      {[r.cameraMake, r.cameraModel].filter(Boolean).join(" ") ||
-                        "—"}
-                    </div>
-                    {r.lensModel ? <div className="dim">{r.lensModel}</div> : null}
-                    {r.software ? <div className="dim">{r.software}</div> : null}
                   </td>
                   <td title={r.sourcePath}>
                     <div className="filename muted">
@@ -369,9 +354,6 @@ export default function UploadPage() {
                         ? r.sourcePath
                         : "—"}
                     </div>
-                    {formatExposure(r) !== "—" ? (
-                      <div className="dim">{formatExposure(r)}</div>
-                    ) : null}
                   </td>
                 </tr>
               ))}
@@ -445,15 +427,6 @@ export default function UploadPage() {
               {preview.overlayAddress ? (
                 <div>
                   <strong>Overlay address:</strong> {preview.overlayAddress}
-                </div>
-              ) : null}
-              {preview.cameraMake || preview.cameraModel ? (
-                <div>
-                  <strong>Camera:</strong>{" "}
-                  {[preview.cameraMake, preview.cameraModel]
-                    .filter(Boolean)
-                    .join(" ")}
-                  {preview.lensModel ? ` · ${preview.lensModel}` : ""}
                 </div>
               ) : null}
               <div className="dim">
@@ -530,21 +503,6 @@ function tsSourceLabel(source: Uploaded["timestampSource"]) {
     default:
       return "";
   }
-}
-
-function formatExposure(r: Uploaded) {
-  const parts: string[] = [];
-  if (r.focalLength != null) parts.push(`${r.focalLength}mm`);
-  if (r.fNumber != null) parts.push(`f/${r.fNumber}`);
-  if (r.exposureTime != null) {
-    parts.push(
-      r.exposureTime >= 1
-        ? `${r.exposureTime}s`
-        : `1/${Math.round(1 / r.exposureTime)}s`,
-    );
-  }
-  if (r.iso != null) parts.push(`ISO${r.iso}`);
-  return parts.length ? parts.join(" · ") : "—";
 }
 
 function selectionSummary(mode: Mode, files: File[]) {

@@ -42,11 +42,6 @@ export async function DELETE() {
 function num(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
-function str(v: unknown): string | null {
-  if (typeof v !== "string") return null;
-  const s = v.trim();
-  return s.length ? s : null;
-}
 
 // Heuristic timestamp extraction from common phone / messenger filename patterns.
 // Returns ISO string when the filename clearly encodes a date+time.
@@ -87,7 +82,8 @@ async function processImage(opts: {
 
   let meta: Record<string, unknown> | null = null;
   try {
-    // Broad parse — TIFF + EXIF + GPS + PNG IHDR + IPTC + XMP + maker notes.
+    // Broad parse so hasExif/exifFieldCount reflect everything actually in
+    // the file; we only pull coords + timestamp + dimensions out of it.
     meta = (await exifr.parse(buf, {
       tiff: true,
       ifd0: true,
@@ -97,8 +93,6 @@ async function processImage(opts: {
       iptc: true,
       xmp: true,
       jfif: true,
-      makerNote: true,
-      userComment: true,
       mergeOutput: true,
       sanitize: true,
     })) as Record<string, unknown> | null;
@@ -207,22 +201,10 @@ async function processImage(opts: {
     sourcePath,
     latitude: lat,
     longitude: lon,
-    altitude: num(meta?.GPSAltitude),
-    gpsAccuracy: num(meta?.GPSHPositioningError) ?? num(meta?.GPSDOP),
-    gpsDirection: num(meta?.GPSImgDirection),
     takenAt,
     timestampSource,
-    cameraMake: str(meta?.Make),
-    cameraModel: str(meta?.Model),
-    lensModel: str(meta?.LensModel) ?? str(meta?.LensInfo),
-    software: str(meta?.Software),
-    orientation: num(meta?.Orientation),
     width: num(meta?.ExifImageWidth) ?? num(meta?.ImageWidth),
     height: num(meta?.ExifImageHeight) ?? num(meta?.ImageHeight),
-    focalLength: num(meta?.FocalLength),
-    fNumber: num(meta?.FNumber),
-    iso: num(meta?.ISO) ?? num(meta?.ISOSpeedRatings),
-    exposureTime: num(meta?.ExposureTime),
     hasGps: lat !== null && lon !== null,
     hasExif: exifKeys.length > 0,
     exifFieldCount: exifKeys.length,
