@@ -9,6 +9,25 @@ import {
 
 type Mode = "files" | "folder" | "archive";
 
+type PhaseStep = "idle" | "uploading" | "extracting" | "processing" | "complete";
+
+function currentStep(phase: ReturnType<typeof useUpload>["phase"]): PhaseStep {
+  if (phase.kind === "uploading") return "uploading";
+  if (phase.kind === "preparing") return phase.extracting ? "extracting" : "uploading";
+  if (phase.kind === "processing") return "processing";
+  if (phase.kind === "complete") return "complete";
+  return "idle";
+}
+
+const STEPS: { id: PhaseStep; label: string }[] = [
+  { id: "uploading",   label: "Uploading"   },
+  { id: "extracting",  label: "Extracting"  },
+  { id: "processing",  label: "Processing"  },
+  { id: "complete",    label: "Complete"    },
+];
+
+const STEP_ORDER: PhaseStep[] = ["uploading", "extracting", "processing", "complete"];
+
 export default function UploadPage() {
   const { phase, results, skipped, startUpload, resetAll } = useUpload();
 
@@ -76,14 +95,16 @@ export default function UploadPage() {
     return { total, withGps, noMeta };
   }, [results]);
 
-  let barPct = 0;
-  let primaryLabel = "";
-  let secondaryLabel = "";
   const busy =
     phase.kind === "uploading" ||
     phase.kind === "preparing" ||
     phase.kind === "processing";
+
   const indeterminate = phase.kind === "preparing" && !phase.extracting;
+
+  let barPct = 0;
+  let primaryLabel = "";
+  let secondaryLabel = "";
 
   if (phase.kind === "uploading") {
     barPct = phase.pct * 100;
@@ -104,8 +125,11 @@ export default function UploadPage() {
     secondaryLabel = formatEta(phase.etaMs) || "Calculating…";
   } else if (phase.kind === "complete") {
     barPct = 100;
-    primaryLabel = "Complete";
+    primaryLabel = `Complete — ${results.length} photo${results.length === 1 ? "" : "s"} processed`;
   }
+
+  const step = currentStep(phase);
+  const stepIdx = STEP_ORDER.indexOf(step);
 
   const dropLabel =
     mode === "folder"
@@ -124,11 +148,27 @@ export default function UploadPage() {
             <div>
               <h1 className="page-title">Upload photos</h1>
               <p className="subtitle">
-                Files, folder, or ZIP archive. GPS and overlay OCR are extracted automatically.
-                You can leave this page — upload continues in the background.
+                Files, folders, or ZIP archives. GPS and overlay data extracted automatically.
               </p>
             </div>
           </div>
+
+          {phase.kind !== "idle" && (
+            <div className="upload-phases">
+              {STEPS.map((s, i) => {
+                const isDone = i < stepIdx;
+                const isActive = s.id === step && phase.kind !== "complete" || (s.id === "complete" && phase.kind === "complete");
+                return (
+                  <div
+                    key={s.id}
+                    className={`upload-phase-step ${isActive ? "active" : ""} ${isDone ? "done" : ""}`}
+                  >
+                    {s.label}
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           <div className="seg">
             {(["files", "folder", "archive"] as Mode[]).map((m) => (
@@ -146,7 +186,7 @@ export default function UploadPage() {
 
           <div className="field-row">
             <input
-              placeholder="Project (optional)"
+              placeholder="Project name (optional)"
               value={project}
               onChange={(e) => setProject(e.target.value)}
               disabled={busy}
@@ -183,7 +223,21 @@ export default function UploadPage() {
             <input ref={filesRef} type="file" multiple accept="image/*" onChange={(e) => pickFiles(e.target.files)} style={{ display: "none" }} />
             <input ref={folderRef} type="file" multiple onChange={(e) => pickFiles(e.target.files)} style={{ display: "none" }} {...({ webkitdirectory: "", directory: "" } as Record<string, string>)} />
             <input ref={archiveRef} type="file" accept=".zip,application/zip,application/x-zip-compressed" onChange={(e) => pickFiles(e.target.files)} style={{ display: "none" }} />
-            {files.length > 0 ? selectionSummary(mode, files) : dropLabel}
+            {files.length > 0 ? (
+              <div>
+                <div className="dropzone-label">{selectionSummary(mode, files)}</div>
+                <div className="dropzone-sub">Click to change selection</div>
+              </div>
+            ) : (
+              <div>
+                <div className="dropzone-label">{dropLabel}</div>
+                <div className="dropzone-sub">
+                  {mode === "files" ? "JPEG, PNG, HEIC — GPS and overlay metadata extracted automatically" : ""}
+                  {mode === "folder" ? "All image files inside the folder will be uploaded" : ""}
+                  {mode === "archive" ? "ZIP containing image files" : ""}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="action-row">
@@ -316,12 +370,12 @@ function renderGpsBadge(r: Uploaded) {
 
 function tsLabel(src: Uploaded["timestampSource"]) {
   switch (src) {
-    case "overlay": return "overlay OCR";
-    case "exif": return "EXIF";
-    case "gps": return "GPS timestamp";
+    case "overlay":  return "overlay OCR";
+    case "exif":     return "EXIF";
+    case "gps":      return "GPS timestamp";
     case "filename": return "filename";
-    case "mtime": return "file mtime";
-    default: return "";
+    case "mtime":    return "file mtime";
+    default:         return "";
   }
 }
 
