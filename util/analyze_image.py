@@ -16,10 +16,14 @@ DEFAULT_PROMPT_FILE = Path(__file__).parent / "prompts" / "default.txt"
 
 class TrenchAnalysis(BaseModel):
     has_trench: bool
+    has_trench_confidence: int
     has_vertical_measuring_stick: bool
+    has_vertical_measuring_stick_confidence: int
     has_address_sheet: bool
-    address: str | None
+    has_address_sheet_confidence: int
+    addresses: list[str]
     has_sand_bedding: bool
+    has_sand_bedding_confidence: int
 
 
 def guess_mime_type(path: Path) -> str:
