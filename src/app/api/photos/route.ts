@@ -249,6 +249,13 @@ export async function POST(req: NextRequest) {
   const mtimes = form.getAll("mtimes") as string[];
   const project = (form.get("project") as string) || undefined;
   const lotId = (form.get("lotId") as string) || undefined;
+  // Temporary benchmarking knob — caps how many images are processed from
+  // this upload. Remove once we no longer need to tune throughput.
+  const limitRaw = form.get("limit");
+  const limit =
+    typeof limitRaw === "string" && limitRaw.length > 0
+      ? Math.max(0, Math.floor(Number(limitRaw)))
+      : null;
 
   if (files.length === 0) {
     return new Response(JSON.stringify({ error: "no files" }), { status: 400 });
@@ -339,10 +346,19 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // Apply the benchmarking limit AFTER the full pre-scan so the user
+      // sees how many images were skipped because of the cap.
+      let droppedByLimit = 0;
+      if (limit !== null && jobs.length > limit) {
+        droppedByLimit = jobs.length - limit;
+        jobs.length = limit;
+      }
+
       write({
         event: "start",
         total: jobs.length,
         concurrency: OCR_CONCURRENCY,
+        droppedByLimit,
       });
 
       // Parallel OCR. We mutate a shared next-index counter so each worker

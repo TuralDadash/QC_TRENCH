@@ -19,6 +19,8 @@ export default function UploadPage() {
   const [mode, setMode] = useState<Mode>("files");
   const [project, setProject] = useState("");
   const [lotId, setLotId] = useState("");
+  // TEMP — benchmarking cap. Remove before the demo.
+  const [limit, setLimit] = useState<number>(100);
   const [files, setFiles] = useState<File[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
@@ -54,7 +56,7 @@ export default function UploadPage() {
 
   function submit() {
     if (files.length === 0) return;
-    startUpload(files, { project, lotId });
+    startUpload(files, { project, lotId, limit });
     setFiles([]);
     clearInputs();
   }
@@ -169,6 +171,36 @@ export default function UploadPage() {
           style={inputStyle}
           disabled={busy}
         />
+        <label
+          title="TEMP: process at most this many images from the upload (for benchmarking)"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 12,
+            color: "#8a93a3",
+            border: "1px dashed rgba(245, 158, 11, 0.5)",
+            borderRadius: 6,
+            padding: "0 10px",
+          }}
+        >
+          <span>TEMP · limit</span>
+          <input
+            type="number"
+            min={1}
+            value={limit}
+            onChange={(e) => setLimit(Math.max(1, Number(e.target.value) || 1))}
+            disabled={busy}
+            style={{
+              width: 64,
+              padding: "8px 6px",
+              background: "#0f1115",
+              border: "1px solid #2c3340",
+              borderRadius: 4,
+              color: "#e7ebf0",
+            }}
+          />
+        </label>
       </div>
 
       <div

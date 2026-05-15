@@ -67,7 +67,12 @@ export type UploadPhase =
 type StreamEvent =
   | { event: "phase"; phase: "preparing" }
   | { event: "extracting"; archive: string; done: number; total: number }
-  | { event: "start"; total: number; concurrency: number }
+  | {
+      event: "start";
+      total: number;
+      concurrency: number;
+      droppedByLimit: number;
+    }
   | { event: "processed"; done: number; total: number; record: Uploaded }
   | { event: "done"; skipped: Skipped[] }
   | { event: "error"; message: string };
@@ -78,7 +83,7 @@ type ContextValue = {
   skipped: Skipped[];
   startUpload: (
     files: File[],
-    opts: { project?: string; lotId?: string },
+    opts: { project?: string; lotId?: string; limit?: number | null },
   ) => void;
   resetAll: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -113,7 +118,10 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const startUpload = useCallback(
-    (files: File[], opts: { project?: string; lotId?: string }) => {
+    (
+      files: File[],
+      opts: { project?: string; lotId?: string; limit?: number | null },
+    ) => {
       if (files.length === 0) return;
       // Don't start a second upload while one is in-flight.
       if (xhrRef.current) return;
@@ -131,6 +139,8 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       });
       if (opts.project) fd.append("project", opts.project);
       if (opts.lotId) fd.append("lotId", opts.lotId);
+      if (opts.limit != null && opts.limit > 0)
+        fd.append("limit", String(opts.limit));
 
       const xhr = new XMLHttpRequest();
       xhrRef.current = xhr;
@@ -174,6 +184,15 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
           });
         } else if (ev.event === "start") {
           processingStart = performance.now();
+          if (ev.droppedByLimit > 0) {
+            setSkipped((prev) => [
+              ...prev,
+              {
+                name: `(${ev.droppedByLimit} more)`,
+                reason: "skipped due to benchmark limit",
+              },
+            ]);
+          }
           setPhase({
             kind: "processing",
             done: 0,
