@@ -1,13 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  MapContainer,
   TileLayer,
   LayersControl,
   GeoJSON,
-  useMap,
 } from "react-leaflet";
+import { createLeafletContext, LeafletContext } from "@react-leaflet/core";
 import L from "leaflet";
 import type {
   Feature,
@@ -20,17 +19,17 @@ import type { PhotoRecord } from "@/lib/store";
 
 const AUSTRIA_CENTER: [number, number] = [47.5162, 14.5501];
 
-const COLOR_ACCENT = "#009b9b";
-const COLOR_ACCENT_BORDER = "rgba(255,255,255,0.65)";
-const COLOR_TRENCH_DEFAULT = "#5ba4cf";
-const COLOR_FCP_DEFAULT = "#22c55e";
+const COLOR_ACCENT = "#0d9488";
+const COLOR_ACCENT_BORDER = "rgba(255,255,255,0.8)";
+const COLOR_TRENCH_DEFAULT = "#3b82f6";
+const COLOR_FCP_DEFAULT = "#16a34a";
 const COLOR_CLUSTER = "#f59e0b";
 
 const GEOJSON_FILES = {
   siteCluster: "/geojson/CLP20417A-P1-B00_SiteCluster_Polygons.geojson",
   fcpPolygons: "/geojson/CLP20417A-P1-B00_FCP_Polygons.geojson",
-  fcps: "/geojson/CLP20417A-P1-B00_FCPs.geojson",
-  trenches: "/geojson/CLP20417A-P1-B00_Trenches.geojson",
+  fcps:        "/geojson/CLP20417A-P1-B00_FCPs.geojson",
+  trenches:    "/geojson/CLP20417A-P1-B00_Trenches.geojson",
 } as const;
 
 type GeoLayers = {
@@ -44,9 +43,9 @@ function propsTable(props: GeoJsonProperties, keys: string[]) {
   if (!props) return "";
   const rows = keys
     .filter((k) => props[k] != null && props[k] !== "")
-    .map((k) => `<tr><td><b>${k}</b></td><td>${String(props[k])}</td></tr>`)
+    .map((k) => `<tr><td style="color:#6b7280;padding-right:8px;font-size:10px">${k}</td><td style="color:#111827;font-size:11px">${String(props[k])}</td></tr>`)
     .join("");
-  return `<table style="font-size:11px;color:#e2e8f0">${rows}</table>`;
+  return `<table style="border-collapse:collapse">${rows}</table>`;
 }
 
 function trenchStyle(feature?: Feature<Geometry, GeoJsonProperties>): PathOptions {
@@ -66,12 +65,59 @@ const clusterStyle: PathOptions = {
   dashArray: "6 4",
 };
 
-function MapController({ onReady }: { onReady: (map: L.Map) => void }) {
-  const map = useMap();
-  useEffect(() => { onReady(map); }, [map, onReady]);
-  return null;
-}
+function MapCore({
+  center,
+  zoom,
+  onReady,
+  children,
+}: {
+  center: [number, number];
+  zoom: number;
+  onReady: (map: L.Map) => void;
+  children: ReactNode;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<L.Map | null>(null);
+  const [ctx, setCtx] = useState<ReturnType<typeof createLeafletContext> | null>(null);
 
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (mapInstanceRef.current) return;
+
+    try {
+      delete (el as HTMLElement & { _leaflet_id?: number })._leaflet_id;
+    } catch {
+      (el as HTMLElement & { _leaflet_id?: unknown })._leaflet_id = undefined;
+    }
+
+    const map = L.map(el, { scrollWheelZoom: true, zoomControl: true });
+    map.setView(center, zoom);
+    mapInstanceRef.current = map;
+    onReady(map);
+    setCtx(createLeafletContext(map));
+
+    return () => {
+      try {
+        map.remove();
+      } catch {
+        // ignore
+      }
+      mapInstanceRef.current = null;
+      setCtx(null);
+    };
+  }, []);
+
+  return (
+    <div ref={containerRef} style={{ height: "100%", width: "100%" }}>
+      {ctx && (
+        <LeafletContext.Provider value={ctx}>
+          {children}
+        </LeafletContext.Provider>
+      )}
+    </div>
+  );
+}
 
 function formatCoords(p: PhotoRecord): string {
   if (p.latitude == null || p.longitude == null) return "";
@@ -84,6 +130,7 @@ export default function MapView() {
   const [loading, setLoading] = useState(true);
   const [panelOpen, setPanelOpen] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [exceptionMode, setExceptionMode] = useState(false);
   const mapRef = useRef<L.Map | null>(null);
 
   const handleMapReady = useCallback((map: L.Map) => {
@@ -129,6 +176,26 @@ export default function MapView() {
     [photos],
   );
 
+  const analysedCount = useMemo(
+    () => photos.filter((p) => p.analysis != null).length,
+    [photos],
+  );
+
+  const highRiskCount = useMemo(
+    () => photos.filter((p) => !p.hasGps || p.analysis?.isDuplicate).length,
+    [photos],
+  );
+
+  const visiblePhotos = useMemo(() => {
+    if (!exceptionMode) return photos;
+    return photos.filter((p) => !p.hasGps || p.analysis?.isDuplicate);
+  }, [photos, exceptionMode]);
+
+  const visibleGeoPhotos = useMemo(
+    () => visiblePhotos.filter((p) => p.hasGps && p.latitude != null && p.longitude != null),
+    [visiblePhotos],
+  );
+
   const center: [number, number] = useMemo(() => {
     const cluster = layers.siteCluster?.features?.[0];
     if (cluster?.geometry.type === "Polygon") {
@@ -155,14 +222,20 @@ export default function MapView() {
     mapRef.current?.flyTo([p.latitude, p.longitude], 17, { duration: 0.8 });
   }
 
-  if (loading) return <div className="empty">Loading map data...</div>;
+  if (loading) return <div className="empty">Loading map data…</div>;
 
   return (
     <div className="map-wrapper">
-      <MapContainer center={center} zoom={zoom} scrollWheelZoom>
-        <MapController onReady={handleMapReady} />
-        <LayersControl position="topright">
-          <LayersControl.BaseLayer checked name="OpenStreetMap">
+      <MapCore center={center} zoom={zoom} onReady={handleMapReady}>
+        <LayersControl position="bottomleft">
+          <LayersControl.BaseLayer checked name="Light (default)">
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+              url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+            />
+          </LayersControl.BaseLayer>
+
+          <LayersControl.BaseLayer name="OpenStreetMap">
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -176,13 +249,6 @@ export default function MapView() {
             />
           </LayersControl.BaseLayer>
 
-          <LayersControl.BaseLayer name="OSM Humanitarian">
-            <TileLayer
-              attribution='&copy; OpenStreetMap contributors, Tiles courtesy of Humanitarian OSM Team'
-              url="https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png"
-            />
-          </LayersControl.BaseLayer>
-
           {layers.siteCluster && (
             <LayersControl.Overlay checked name="Site cluster">
               <GeoJSON
@@ -190,11 +256,7 @@ export default function MapView() {
                 style={() => clusterStyle}
                 onEachFeature={(f, layer) =>
                   layer.bindPopup(
-                    propsTable(f.properties, [
-                      "kmlDescriptionSimple",
-                      "type",
-                      "externalID",
-                    ]),
+                    propsTable(f.properties, ["kmlDescriptionSimple", "type", "externalID"]),
                   )
                 }
               />
@@ -208,12 +270,7 @@ export default function MapView() {
                 style={fcpPolygonStyle}
                 onEachFeature={(f, layer) =>
                   layer.bindPopup(
-                    propsTable(f.properties, [
-                      "kmlName",
-                      "kmlDescriptionSimple",
-                      "type",
-                      "externalID",
-                    ]),
+                    propsTable(f.properties, ["kmlName", "kmlDescriptionSimple", "type", "externalID"]),
                   )
                 }
               />
@@ -281,12 +338,12 @@ export default function MapView() {
             </LayersControl.Overlay>
           )}
 
-          <LayersControl.Overlay checked name={`Photos (${geoPhotos.length})`}>
+          <LayersControl.Overlay checked name={`Photos (${visibleGeoPhotos.length})`}>
             <GeoJSON
-              key={`photos-${geoPhotos.length}`}
+              key={`photos-${visibleGeoPhotos.length}-${exceptionMode}`}
               data={({
                 type: "FeatureCollection",
-                features: geoPhotos.map((p) => ({
+                features: visibleGeoPhotos.map((p) => ({
                   type: "Feature",
                   properties: {
                     id: p.id,
@@ -294,6 +351,7 @@ export default function MapView() {
                     takenAt: p.takenAt,
                     project: p.project,
                     lotId: p.lotId,
+                    isDuplicate: p.analysis?.isDuplicate ?? false,
                   },
                   geometry: {
                     type: "Point",
@@ -301,15 +359,16 @@ export default function MapView() {
                   },
                 })),
               }) as FeatureCollection}
-              pointToLayer={(_, latlng) =>
-                L.circleMarker(latlng, {
+              pointToLayer={(feature, latlng) => {
+                const isDup = feature.properties?.isDuplicate as boolean;
+                return L.circleMarker(latlng, {
                   radius: 8,
                   color: COLOR_ACCENT_BORDER,
                   weight: 2,
-                  fillColor: COLOR_ACCENT,
+                  fillColor: isDup ? "#9333ea" : COLOR_ACCENT,
                   fillOpacity: 0.9,
-                })
-              }
+                });
+              }}
               onEachFeature={(f, layer) => {
                 const p = f.properties ?? {};
                 layer.bindPopup(
@@ -319,6 +378,7 @@ export default function MapView() {
                      ${p.project ? `Project: ${p.project}` : ""}
                      ${p.lotId ? ` &middot; Lot: ${p.lotId}` : ""}
                      ${p.takenAt ? `<br/>Taken: ${new Date(p.takenAt).toLocaleString()}` : ""}
+                     ${p.isDuplicate ? `<br/><span style="color:#9333ea;font-weight:600">Duplicate detected</span>` : ""}
                    </div>`,
                   { maxWidth: 240 },
                 );
@@ -327,39 +387,62 @@ export default function MapView() {
             />
           </LayersControl.Overlay>
         </LayersControl>
-      </MapContainer>
+      </MapCore>
 
-      <div className="map-overlay">
-        <div className="map-overlay-title">APG Photo Audit</div>
-        <div className="map-overlay-stats">
-          <div>
-            <div className="map-stat-num">{photos.length}</div>
-            <div className="map-stat-label">Photos</div>
-          </div>
-          <div>
-            <div className="map-stat-num gps">{geoPhotos.length}</div>
-            <div className="map-stat-label">With GPS</div>
-          </div>
-          <div>
-            <div className="map-stat-num warn">{photos.length - geoPhotos.length}</div>
-            <div className="map-stat-label">No GPS</div>
-          </div>
+      <div className="map-kpi-strip">
+        <div className="kpi-card">
+          <div className="kpi-value">{photos.length}</div>
+          <div className="kpi-label">Total</div>
         </div>
+        <div className="kpi-card">
+          <div className="kpi-value ok">{geoPhotos.length}</div>
+          <div className="kpi-label">With GPS</div>
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-value warn">{photos.length - geoPhotos.length}</div>
+          <div className="kpi-label">No GPS</div>
+        </div>
+        {analysedCount > 0 && (
+          <div className="kpi-card">
+            <div className="kpi-value">{analysedCount}</div>
+            <div className="kpi-label">Analysed</div>
+          </div>
+        )}
+        {highRiskCount > 0 && (
+          <div className="kpi-card">
+            <div className="kpi-value err">{highRiskCount}</div>
+            <div className="kpi-label">High Risk</div>
+          </div>
+        )}
+
+        <button
+          className={`exception-btn ${exceptionMode ? "active" : ""}`}
+          onClick={() => setExceptionMode((v) => !v)}
+          style={{ marginLeft: "auto" }}
+        >
+          <span className="exception-dot" />
+          {exceptionMode ? "Exceptions only" : "Exception Mode"}
+        </button>
       </div>
 
       {photos.length > 0 && (
-        <div className={`photo-panel ${panelOpen ? "open" : ""}`}>
+        <div className="photo-panel">
           <button
             className="photo-panel-toggle"
             onClick={() => setPanelOpen((v) => !v)}
             title={panelOpen ? "Hide photos" : "Show photos"}
           >
-            {panelOpen ? "✕" : `Photos (${photos.length})`}
+            {panelOpen ? "✕ Close" : `Photos (${visiblePhotos.length})`}
           </button>
 
           {panelOpen && (
             <div className="photo-panel-list">
-              {photos.map((p) => (
+              <div className="photo-panel-header">
+                <span className="photo-panel-header-title">
+                  {exceptionMode ? `Exceptions · ${visiblePhotos.length}` : `All photos · ${photos.length}`}
+                </span>
+              </div>
+              {visiblePhotos.map((p) => (
                 <div
                   key={p.id}
                   className={`photo-panel-item ${selectedId === p.id ? "selected" : ""} ${p.hasGps ? "has-gps" : ""}`}
@@ -387,6 +470,9 @@ export default function MapView() {
                         </span>
                       ) : (
                         <span className="ppbadge no-gps">No GPS</span>
+                      )}
+                      {p.analysis?.isDuplicate && (
+                        <span className="ppbadge" style={{ color: "var(--cat4)", borderColor: "var(--cat4-border)", background: "var(--cat4-bg)" }}>Duplicate</span>
                       )}
                       {p.project && (
                         <span className="ppbadge neutral">{p.project}</span>
