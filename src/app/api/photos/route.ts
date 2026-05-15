@@ -17,11 +17,13 @@ export const runtime = "nodejs";
 
 const IMAGE_EXT_RE = /\.(jpe?g|png|webp|heic|heif|tiff?)$/i;
 
-// Parallel OCR — CPU-bound (sharp + tesseract subprocesses). 4 is a safe
-// default for an 8-core machine; bump via env when running on bigger boxes.
+// Parallel OCR — CPU-bound (sharp + tesseract subprocesses). 6 is a good
+// default for an 8-12 core machine; bump via env when running on bigger
+// boxes. Each worker spawns one tesseract subprocess at a time, so the
+// global subprocess count == OCR_CONCURRENCY.
 const OCR_CONCURRENCY = Math.max(
   1,
-  Number(process.env.OCR_CONCURRENCY ?? 4),
+  Number(process.env.OCR_CONCURRENCY ?? 6),
 );
 
 export async function GET() {
@@ -246,6 +248,30 @@ type Job = {
 };
 
 export async function POST(req: NextRequest) {
+  // Read the upload body BEFORE returning the streaming response. Reading
+  // req.formData() inside the stream's start callback is unreliable on this
+  // Next.js version — the request body and response stream can't always
+  // coexist that way.
+  let form: FormData;
+  try {
+    form = await req.formData();
+  } catch (err) {
+    return new Response(
+      JSON.stringify({ error: (err as Error).message || "form parse failed" }),
+      { status: 400 },
+    );
+  }
+
+  const files = form.getAll("files") as File[];
+  const paths = form.getAll("paths") as string[];
+  const mtimes = form.getAll("mtimes") as string[];
+  const project = (form.get("project") as string) || undefined;
+  const lotId = (form.get("lotId") as string) || undefined;
+
+  if (files.length === 0) {
+    return new Response(JSON.stringify({ error: "no files" }), { status: 400 });
+  }
+
   const stream = new ReadableStream({
     async start(controller) {
       const enc = new TextEncoder();
@@ -253,31 +279,9 @@ export async function POST(req: NextRequest) {
         controller.enqueue(enc.encode(JSON.stringify(obj) + "\n"));
       };
 
-      // Immediately tell the client we've started processing — surfaces the
-      // "between upload-complete and first OCR" pre-phase so the UI can
-      // render a loader instead of going silent.
+      // First event — surfaces the pre-OCR "preparing" phase so the UI can
+      // render a loader while we read+extract zips before the first OCR.
       write({ event: "phase", phase: "preparing" });
-
-      let form: FormData;
-      try {
-        form = await req.formData();
-      } catch (err) {
-        write({ event: "error", message: (err as Error).message });
-        controller.close();
-        return;
-      }
-
-      const files = form.getAll("files") as File[];
-      const paths = form.getAll("paths") as string[];
-      const mtimes = form.getAll("mtimes") as string[];
-      const project = (form.get("project") as string) || undefined;
-      const lotId = (form.get("lotId") as string) || undefined;
-
-      if (files.length === 0) {
-        write({ event: "error", message: "no files" });
-        controller.close();
-        return;
-      }
 
       await fs.mkdir(PHOTOS_DIR, { recursive: true });
 
