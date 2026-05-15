@@ -66,6 +66,19 @@ export async function saveIndex(records: PhotoRecord[]) {
   await fs.writeFile(INDEX_FILE, JSON.stringify(records, null, 2), "utf8");
 }
 
+export async function clearAll() {
+  await ensureDirs();
+  // Empty the photos directory wholesale (in case earlier wipes left orphans
+  // not referenced by the current index).
+  const entries = await fs.readdir(PHOTOS_DIR).catch(() => [] as string[]);
+  await Promise.all(
+    entries.map((name) =>
+      fs.unlink(path.join(PHOTOS_DIR, name)).catch(() => undefined),
+    ),
+  );
+  await saveIndex([]);
+}
+
 export async function appendRecords(newOnes: PhotoRecord[]) {
   const existing = await loadIndex();
   const merged = [...existing, ...newOnes];

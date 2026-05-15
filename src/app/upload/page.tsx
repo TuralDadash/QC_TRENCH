@@ -68,6 +68,8 @@ export default function UploadPage() {
   const [skipped, setSkipped] = useState<Skipped[]>([]);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [dragOver, setDragOver] = useState(false);
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
 
   // Load existing photos on mount so navigating to the map and back keeps state.
   useEffect(() => {
@@ -76,6 +78,36 @@ export default function UploadPage() {
       .then((d) => setResults(d.photos || []))
       .catch(() => {});
   }, []);
+
+  // Close preview on Escape.
+  useEffect(() => {
+    if (!previewId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPreviewId(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [previewId]);
+
+  async function resetAll() {
+    if (resetting) return;
+    if (
+      !window.confirm(
+        "Delete all uploaded photos and metadata? This cannot be undone.",
+      )
+    )
+      return;
+    setResetting(true);
+    try {
+      await fetch("/api/photos", { method: "DELETE" });
+      setResults([]);
+      setSkipped([]);
+    } finally {
+      setResetting(false);
+    }
+  }
+
+  const preview = previewId ? results.find((r) => r.id === previewId) : null;
 
   function pickFiles(list: FileList | null) {
     if (!list) return;
@@ -351,6 +383,15 @@ export default function UploadPage() {
             {skipped.length > 0 && (
               <span className="err">{skipped.length} skipped</span>
             )}
+            <button
+              type="button"
+              className="btn-ghost danger"
+              onClick={resetAll}
+              disabled={resetting || results.length === 0}
+              style={{ marginLeft: "auto" }}
+            >
+              {resetting ? "Resetting…" : "Reset all"}
+            </button>
           </div>
 
           <table>
@@ -371,11 +412,18 @@ export default function UploadPage() {
               {results.map((r) => (
                 <tr key={r.id}>
                   <td>
-                    <img
-                      src={`/api/photos/${r.id}`}
-                      alt=""
-                      className="row-thumb"
-                    />
+                    <button
+                      type="button"
+                      className="thumb-btn"
+                      onClick={() => setPreviewId(r.id)}
+                      title="Click to enlarge"
+                    >
+                      <img
+                        src={`/api/photos/${r.id}`}
+                        alt=""
+                        className="row-thumb"
+                      />
+                    </button>
                   </td>
                   <td title={r.originalName}>
                     <div className="filename">{r.originalName}</div>
@@ -459,6 +507,84 @@ export default function UploadPage() {
               </ul>
             </details>
           )}
+        </div>
+      )}
+
+      {preview && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setPreviewId(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="modal-content"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="modal-close"
+              onClick={() => setPreviewId(null)}
+              aria-label="Close"
+            >
+              ×
+            </button>
+            <img
+              src={`/api/photos/${preview.id}`}
+              alt={preview.originalName}
+              className="modal-img"
+            />
+            <div className="modal-meta">
+              <div className="modal-title">{preview.originalName}</div>
+              <div className="modal-row">
+                {renderMetadataBadge(preview)}
+                {preview.overlayApp ? (
+                  <span className="badge ok" style={{ marginLeft: 8 }}>
+                    {preview.overlayApp}
+                  </span>
+                ) : null}
+              </div>
+              {preview.takenAt ? (
+                <div>
+                  <strong>Taken:</strong>{" "}
+                  {new Date(preview.takenAt).toLocaleString()}{" "}
+                  <span className="dim">
+                    ({tsSourceLabel(preview.timestampSource)})
+                  </span>
+                </div>
+              ) : null}
+              {preview.latitude != null && preview.longitude != null ? (
+                <div>
+                  <strong>GPS:</strong> {preview.latitude.toFixed(6)},{" "}
+                  {preview.longitude.toFixed(6)}{" "}
+                  <span className="dim">(source: {preview.gpsSource})</span>
+                </div>
+              ) : null}
+              {preview.overlayAddress ? (
+                <div>
+                  <strong>Overlay address:</strong> {preview.overlayAddress}
+                </div>
+              ) : null}
+              {preview.cameraMake || preview.cameraModel ? (
+                <div>
+                  <strong>Camera:</strong>{" "}
+                  {[preview.cameraMake, preview.cameraModel]
+                    .filter(Boolean)
+                    .join(" ")}
+                  {preview.lensModel ? ` · ${preview.lensModel}` : ""}
+                </div>
+              ) : null}
+              <div className="dim">
+                {preview.width && preview.height
+                  ? `${preview.width} × ${preview.height} · `
+                  : ""}
+                {formatSize(preview.size)}
+                {preview.sourcePath && preview.sourcePath !== preview.originalName
+                  ? ` · ${preview.sourcePath}`
+                  : ""}
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

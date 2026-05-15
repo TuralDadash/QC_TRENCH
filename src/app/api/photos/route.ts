@@ -7,6 +7,7 @@ import AdmZip from "adm-zip";
 import {
   PHOTOS_DIR,
   appendRecords,
+  clearAll,
   loadIndex,
   type PhotoRecord,
 } from "@/lib/store";
@@ -22,6 +23,11 @@ export async function GET() {
     b.uploadedAt.localeCompare(a.uploadedAt),
   );
   return Response.json({ photos: sorted });
+}
+
+export async function DELETE() {
+  await clearAll();
+  return Response.json({ ok: true });
 }
 
 function num(v: unknown): number | null {
