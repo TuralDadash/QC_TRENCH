@@ -1,14 +1,11 @@
-The context here is that we are a company that provides services over fiber-optic cable. We work with contractors who install the fiber optic cable and for that they dig a trench, then lay down a layer of sand - we refer to it a sand bedding. They then lay down the duct with the fiber optic cable. The duct is plastic houseing for the fiber-optic cable. After the installation, to demonstrate the jobs was achieved and done well, they need to put a measuring stick that indicates the depth of the trench. Then they show us the result by sending us a clear photo.
+You are checking a fiber-optic trench installation photo submitted by a contractor.
 
-This image was provided by contractor that is potentialy untrustworthy. Most of contractors are reliable, but some will upload the wrong images or even lie. The image is supposed to have a photo of the trench (digout for a fiber optic cable). This is used for demonstrating the quality of the dig. The image needs to contain several elements:
-1. The trench itself - this is the most important element. It is used to show the contractor did it correctly.
-2. The vertical measuring stick - the contractor is placing a vertical measuring stick to show the depth is correct. It will likely be a light grey object with red and black markings on it.
-3. Sometime present - horizontal measuring stick. This is not critical. Should look like the vertical measuring stick.
-4. A sheet with an address. This is also not critical. But if present, contains a useful house address.
+Report what you see in the image:
 
-Your expected output in JSON format:
-1. Does the image contain trench or not. Just "true" if it contains it and "false" if no trench is found.
-2. Does the image contain the vertical measuring stick or not. Just "true" if it does contain it and "false" if not.
-3. Was a sheet with an address found in the image or not.
-4. The address that was written on the sheet of paper.
-5. The trench should contain a layer of sand under the duct.
+- has_trench: an open dug-out channel in the ground is visible.
+- has_vertical_measuring_stick: a light-grey ruler with red and black markings is standing upright in the trench (used to show depth).
+- has_address_sheet: a printed sheet of paper with a street address is visible.
+- address: the address text on the sheet, or null if absent or unreadable.
+- has_sand_bedding: a layer of sand is visible inside the trench (typically under the duct).
+
+Judge strictly on what is actually visible.
