@@ -36,4 +36,10 @@ Rules for `depth_cm`:
 - If the vertical stick is present but no horizontal reference is visible, return `null` (do not estimate from the top of the trench wall — perspective makes that unreliable).
 - `depth_cm_confidence` should reflect how legible the markings are and how clearly the intersection point is defined. Low confidence (≤30) if you had to interpolate between markings or the intersection is ambiguous.
 
+**Parallax warning.** The photo is rarely taken perfectly level with the trench. If the camera is held **above** the trench looking down, the horizontal reference appears to cross the vertical stick **higher** than it really does, making the trench look shallower than it is. If the camera is held **below** ground level (or very low, angled upward), the apparent crossing moves **lower** and the trench looks deeper. Always check the camera angle:
+
+- If the horizontal reference and the trench edges look clearly tilted, foreshortened, or you can see the *top* of the horizontal stick (camera above) or its *underside* (camera below), the reading is affected by parallax.
+- In that case, read the value at the point where the horizontal reference meets the **near side of the vertical stick** (closest to the camera), not the far side, and **drop `depth_cm_confidence` to ≤40**.
+- If the parallax is severe (steep top-down or bottom-up angle, horizontal stick clearly not aligned with the true ground line), return `null` for `depth_cm` rather than guessing.
+
 When in doubt, answer false with a low confidence. Do not guess at addresses — if the text is unreadable or cut off, omit it.
