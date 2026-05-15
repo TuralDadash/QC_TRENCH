@@ -10,7 +10,7 @@ Some contractors submit wrong, old, or misleading photos. Judge only on what is 
 
 - **Trench**: an open, freshly excavated channel in the ground with visible depth and walls. Not: filled-in ground, finished pavement, a shallow scrape, generic dirt, or an indoor shot.
 - **Vertical measuring stick**: a ruler standing upright in the trench, usually a light-grey body with red-and-black (or red-and-white) markings at regular intervals. Markings must be legible.
-- **Horizontal scale object** (informational only, not in output): a measuring stick lying flat, or sometimes a shovel or similar object used for scale.
+- **Horizontal reference**: a second measuring stick (or sometimes a shovel handle / similar straight object) laid flat across the top of the trench at ground level. Used as the reference line for reading the trench depth off the vertical stick.
 - **Address sheet**: a printed or hand-written sheet of paper listing one or more street addresses. A sign, equipment label, or phone screen does not count.
 - **Sand bedding**: a distinct lighter-coloured layer of sand at the bottom of the trench, clearly different from the surrounding native soil. Not: uniform dirt, gravel, or rubble.
 
@@ -23,5 +23,17 @@ For every detection, also return a **confidence score from 0 to 100** — your s
 - `has_address_sheet` + `has_address_sheet_confidence`
 - `addresses` — an **array** of every street address visible on the sheet, each transcribed **exactly as written** (preserve spelling, casing, and punctuation; do not translate or normalize). Use an empty array `[]` if no address is visible or legible.
 - `has_sand_bedding` + `has_sand_bedding_confidence`
+- `depth_cm` (integer, centimetres) + `depth_cm_confidence`
+
+# How to read the depth
+
+The vertical measuring stick stands with its base at the bottom of the trench, and its markings run upward in centimetres. The horizontal reference object is laid flat across the top of the trench at ground level. **Read the value on the vertical stick at the point where the horizontal reference crosses it — that number is the trench depth in cm.**
+
+Rules for `depth_cm`:
+
+- Only return a value if you can clearly see (a) the vertical stick's markings and (b) the horizontal reference crossing it. Otherwise return `null`.
+- Return an integer in centimetres. Round to the nearest cm.
+- If the vertical stick is present but no horizontal reference is visible, return `null` (do not estimate from the top of the trench wall — perspective makes that unreliable).
+- `depth_cm_confidence` should reflect how legible the markings are and how clearly the intersection point is defined. Low confidence (≤30) if you had to interpolate between markings or the intersection is ambiguous.
 
 When in doubt, answer false with a low confidence. Do not guess at addresses — if the text is unreadable or cut off, omit it.
