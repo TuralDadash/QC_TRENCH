@@ -47,6 +47,7 @@ class BurntInMetadata(BaseModel):
     gps_lon: Optional[float] = None
     timestamp_iso: Optional[str] = None
     raw_text: str = ""
+    confidence: float = 0.0
 
 
 class AddressLabel(BaseModel):
@@ -67,7 +68,9 @@ class PipeEndSeals(BaseModel):
 
 class PhotoAssessment(BaseModel):
     is_construction_photo: bool = False
+    is_construction_photo_confidence: float = 0.0
     is_likely_ai_generated: bool = False
+    is_likely_ai_generated_confidence: float = 0.0
     overall_confidence: float = 0.0
     duct: DuctSignal = Field(default_factory=DuctSignal)
     depth: DepthSignal = Field(default_factory=DepthSignal)
@@ -78,29 +81,16 @@ class PhotoAssessment(BaseModel):
     pipe_end_seals: PipeEndSeals = Field(default_factory=PipeEndSeals)
 
 
-_PROMPT = """You are reviewing a documentation photo from a fiber-optic trench construction site.
-Inspect the image and fill the structured schema. Be conservative: when a signal is
-not clearly readable, mark uncertain / not visible / confidence low.
+_DEFAULT_PROMPT_FILE = Path(__file__).parent / "prompts" / "default.txt"
 
-Definitions:
-- duct: a plastic conduit (often black or grey corrugated tube) carrying fiber cables.
-  Yellow cables are typically gas/electric, NOT fiber — set duct.visible=false unless
-  you can identify a fiber duct. Other utility pipes can coexist in the trench.
-- depth measurement: a folding ruler or measuring tape lying in the trench, used to
-  document trench depth. If visible, read the depth in centimeters. Plausible range
-  for fiber trenches is 70-120 cm. If you cannot read it confidently, set uncertain=true
-  and report depth_range_cm with your best lower/upper bounds.
-- sand bedding: fine light-colored sand layer around the duct. Distinguish from
-  dark soil. Shadows can make sand look darker — if ambiguous, use status="uncertain".
-- burnt_in_metadata: many photos have white text overlaid at the bottom/edge with
-  GPS coordinates and timestamp. Extract them. raw_text is the literal overlay text.
-- address_label: occasionally a white paper with handwritten or printed address is
-  placed in the trench. Extract its full text if visible.
-- is_likely_ai_generated: flag if the image looks synthetic, has impossible physics,
-  watermark from a known generator, or unnatural texture artifacts.
 
-Return only the structured JSON. Do not include any prose outside the schema.
-"""
+def _load_prompt() -> str:
+    override = os.environ.get("TRENCH_PROMPT_FILE")
+    path = Path(override) if override else _DEFAULT_PROMPT_FILE
+    return path.read_text(encoding="utf-8")
+
+
+_PROMPT = _load_prompt()
 
 
 def _empty_assessment() -> PhotoAssessment:
