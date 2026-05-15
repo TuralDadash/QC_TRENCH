@@ -1,53 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  formatEta,
+  useUpload,
+  type Uploaded,
+} from "@/context/UploadProvider";
 
-type Uploaded = {
-  id: string;
-  originalName: string;
-  size: number;
-  project?: string;
-  lotId?: string;
-  sourcePath?: string;
-  latitude: number | null;
-  longitude: number | null;
-  altitude: number | null;
-  gpsAccuracy: number | null;
-  gpsDirection: number | null;
-  takenAt: string | null;
-  cameraMake: string | null;
-  cameraModel: string | null;
-  lensModel: string | null;
-  software: string | null;
-  orientation: number | null;
-  width: number | null;
-  height: number | null;
-  focalLength: number | null;
-  fNumber: number | null;
-  iso: number | null;
-  exposureTime: number | null;
-  hasGps: boolean;
-  hasExif: boolean;
-  exifFieldCount: number;
-  exifKeys?: string[];
-  timestampSource: "exif" | "gps" | "filename" | "mtime" | null;
-};
-
-type Skipped = { name: string; reason: string };
 type Mode = "files" | "folder" | "archive";
 
-type Phase =
-  | { kind: "idle" }
-  | { kind: "uploading"; pct: number }
-  | { kind: "processing"; done: number; total: number }
-  | { kind: "complete" };
-
-type StreamEvent =
-  | { event: "start"; total: number }
-  | { event: "processed"; index: number; total: number; record: Uploaded }
-  | { event: "done"; skipped: Skipped[] };
-
 export default function UploadPage() {
+  const { phase, results, skipped, startUpload, resetAll } = useUpload();
+
   const filesRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
   const archiveRef = useRef<HTMLInputElement>(null);
@@ -55,19 +19,22 @@ export default function UploadPage() {
   const [mode, setMode] = useState<Mode>("files");
   const [project, setProject] = useState("");
   const [lotId, setLotId] = useState("");
+  // TEMP — benchmarking cap. Remove before the demo.
+  const [limit, setLimit] = useState<number>(100);
   const [files, setFiles] = useState<File[]>([]);
-  const [results, setResults] = useState<Uploaded[]>([]);
-  const [skipped, setSkipped] = useState<Skipped[]>([]);
-  const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [dragOver, setDragOver] = useState(false);
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
 
-  // Load existing photos on mount so navigating to the map and back keeps state.
+  // Close preview on Escape.
   useEffect(() => {
-    fetch("/api/photos")
-      .then((r) => r.json())
-      .then((d) => setResults(d.photos || []))
-      .catch(() => {});
-  }, []);
+    if (!previewId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPreviewId(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [previewId]);
 
   function pickFiles(list: FileList | null) {
     if (!list) return;
@@ -87,97 +54,26 @@ export default function UploadPage() {
     clearInputs();
   }
 
-  function uploadWithProgress(
-    fd: FormData,
-    onUploadPct: (pct: number) => void,
-    onEvent: (ev: StreamEvent) => void,
-  ): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      let buffer = "";
-      let lastLen = 0;
-
-      const drain = () => {
-        const txt = xhr.responseText;
-        const chunk = txt.slice(lastLen);
-        lastLen = txt.length;
-        buffer += chunk;
-        let nl;
-        while ((nl = buffer.indexOf("\n")) >= 0) {
-          const line = buffer.slice(0, nl).trim();
-          buffer = buffer.slice(nl + 1);
-          if (!line) continue;
-          try {
-            onEvent(JSON.parse(line) as StreamEvent);
-          } catch {
-            // skip malformed line
-          }
-        }
-      };
-
-      xhr.open("POST", "/api/photos");
-      xhr.upload.addEventListener("progress", (e) => {
-        if (e.lengthComputable) onUploadPct(e.loaded / e.total);
-      });
-      xhr.upload.addEventListener("load", () => onUploadPct(1));
-      xhr.addEventListener("progress", drain);
-      xhr.addEventListener("load", () => {
-        drain();
-        if (xhr.status >= 200 && xhr.status < 300) resolve();
-        else reject(new Error(`HTTP ${xhr.status}`));
-      });
-      xhr.addEventListener("error", () => reject(new Error("network error")));
-      xhr.send(fd);
-    });
+  function submit() {
+    if (files.length === 0) return;
+    startUpload(files, { project, lotId, limit });
+    setFiles([]);
+    clearInputs();
   }
 
-  async function submit() {
-    if (files.length === 0) return;
-    setPhase({ kind: "uploading", pct: 0 });
-    setSkipped([]);
-
-    const fd = new FormData();
-    files.forEach((f) => {
-      fd.append("files", f);
-      const rel = (f as File & { webkitRelativePath?: string })
-        .webkitRelativePath;
-      fd.append("paths", rel && rel.length > 0 ? rel : f.name);
-      fd.append("mtimes", String(f.lastModified || 0));
-    });
-    if (project) fd.append("project", project);
-    if (lotId) fd.append("lotId", lotId);
-
-    const newRecords: Uploaded[] = [];
-
+  async function doReset() {
+    if (resetting) return;
+    if (
+      !window.confirm(
+        "Delete all uploaded photos and metadata? This cannot be undone.",
+      )
+    )
+      return;
+    setResetting(true);
     try {
-      await uploadWithProgress(
-        fd,
-        (pct) =>
-          setPhase((p) => (p.kind === "uploading" ? { kind: "uploading", pct } : p)),
-        (event) => {
-          if (event.event === "start") {
-            setPhase({ kind: "processing", done: 0, total: event.total });
-          } else if (event.event === "processed") {
-            newRecords.push(event.record);
-            // Stream the record into the table immediately so the user sees it appear.
-            setResults((prev) => [event.record, ...prev]);
-            setPhase({
-              kind: "processing",
-              done: event.index,
-              total: event.total,
-            });
-          } else if (event.event === "done") {
-            setSkipped(event.skipped || []);
-          }
-        },
-      );
-      setPhase({ kind: "complete" });
-      setFiles([]);
-      clearInputs();
-      setTimeout(() => setPhase({ kind: "idle" }), 1500);
-    } catch (err) {
-      setPhase({ kind: "idle" });
-      alert("Upload failed: " + (err as Error).message);
+      await resetAll();
+    } finally {
+      setResetting(false);
     }
   }
 
@@ -190,20 +86,42 @@ export default function UploadPage() {
     return { total, withGps, exifNoGps, noMeta, withTime };
   }, [results]);
 
+  // Drive the main progress bar from the global phase.
   let barPct = 0;
-  let label = "";
+  let primaryLabel = "";
+  let secondaryLabel = "";
   if (phase.kind === "uploading") {
     barPct = phase.pct * 100;
-    label = `Uploading ${Math.round(barPct)}%`;
+    primaryLabel = `Uploading ${Math.round(barPct)}%`;
+    secondaryLabel = "Sending files to server";
+  } else if (phase.kind === "preparing") {
+    if (phase.extracting && phase.extracting.total > 0) {
+      barPct = (phase.extracting.done / phase.extracting.total) * 100;
+      primaryLabel = `Extracting archive`;
+      secondaryLabel = `${phase.extracting.done} / ${phase.extracting.total} entries — ${phase.extracting.archive}`;
+    } else {
+      barPct = 0;
+      primaryLabel = phase.message;
+      secondaryLabel = "Server is reading the upload";
+    }
   } else if (phase.kind === "processing") {
     barPct = phase.total > 0 ? (phase.done / phase.total) * 100 : 0;
-    label = `Extracting metadata — ${phase.done} / ${phase.total}`;
+    primaryLabel = `Extracting metadata — ${phase.done} / ${phase.total}`;
+    const eta = formatEta(phase.etaMs);
+    secondaryLabel = eta || "Calculating remaining time…";
   } else if (phase.kind === "complete") {
     barPct = 100;
-    label = "Complete";
+    primaryLabel = "Complete";
+    secondaryLabel = "";
   }
 
-  const busy = phase.kind === "uploading" || phase.kind === "processing";
+  const busy =
+    phase.kind === "uploading" ||
+    phase.kind === "preparing" ||
+    phase.kind === "processing";
+
+  const indeterminate =
+    phase.kind === "preparing" && !phase.extracting;
 
   const dropLabel =
     mode === "folder"
@@ -212,13 +130,16 @@ export default function UploadPage() {
         ? "Click to pick a .zip archive"
         : "Click or drop image files here";
 
+  const preview = previewId ? results.find((r) => r.id === previewId) : null;
+
   return (
     <div className="upload-page wide">
       <h1>Upload construction photos</h1>
       <p style={{ color: "#8a93a3", marginTop: -8 }}>
-        Upload individual files, a whole folder, or a ZIP archive. Each image is
-        scanned for EXIF metadata (GPS, timestamp, camera, lens, exposure) and
-        added to the map.
+        Upload individual files, a whole folder, or a ZIP archive. Each image
+        is OCR-scanned for overlay metadata (GPS Map Camera and similar) and
+        cross-checked against EXIF. You can navigate to the map while an
+        upload is running — progress will keep going in the background.
       </p>
 
       <div className="seg">
@@ -250,6 +171,36 @@ export default function UploadPage() {
           style={inputStyle}
           disabled={busy}
         />
+        <label
+          title="TEMP: process at most this many images from the upload (for benchmarking)"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 12,
+            color: "#8a93a3",
+            border: "1px dashed rgba(245, 158, 11, 0.5)",
+            borderRadius: 6,
+            padding: "0 10px",
+          }}
+        >
+          <span>TEMP · limit</span>
+          <input
+            type="number"
+            min={1}
+            value={limit}
+            onChange={(e) => setLimit(Math.max(1, Number(e.target.value) || 1))}
+            disabled={busy}
+            style={{
+              width: 64,
+              padding: "8px 6px",
+              background: "#0f1115",
+              border: "1px solid #2c3340",
+              borderRadius: 4,
+              color: "#e7ebf0",
+            }}
+          />
+        </label>
       </div>
 
       <div
@@ -303,11 +254,17 @@ export default function UploadPage() {
         {phase.kind !== "idle" && (
           <div className="progress">
             <div
-              className={`bar ${busy ? "active" : ""} ${phase.kind === "complete" ? "done" : ""}`}
+              className={`bar ${busy ? "active" : ""} ${phase.kind === "complete" ? "done" : ""} ${indeterminate ? "indeterminate" : ""}`}
             >
-              <div className="fill" style={{ width: `${barPct}%` }} />
+              <div
+                className="fill"
+                style={indeterminate ? undefined : { width: `${barPct}%` }}
+              />
             </div>
-            <div className="progress-label">{label}</div>
+            <div className="progress-label">{primaryLabel}</div>
+            {secondaryLabel ? (
+              <div className="progress-sub">{secondaryLabel}</div>
+            ) : null}
           </div>
         )}
         <button
@@ -343,6 +300,15 @@ export default function UploadPage() {
             {skipped.length > 0 && (
               <span className="err">{skipped.length} skipped</span>
             )}
+            <button
+              type="button"
+              className="btn-ghost danger"
+              onClick={doReset}
+              disabled={resetting || results.length === 0}
+              style={{ marginLeft: "auto" }}
+            >
+              {resetting ? "Resetting…" : "Reset all"}
+            </button>
           </div>
 
           <table>
@@ -351,11 +317,10 @@ export default function UploadPage() {
                 <th></th>
                 <th>File</th>
                 <th>Metadata</th>
+                <th>Overlay</th>
                 <th>Taken</th>
                 <th>Latitude</th>
                 <th>Longitude</th>
-                <th>Camera / lens</th>
-                <th>Exposure</th>
                 <th>Source</th>
               </tr>
             </thead>
@@ -363,11 +328,18 @@ export default function UploadPage() {
               {results.map((r) => (
                 <tr key={r.id}>
                   <td>
-                    <img
-                      src={`/api/photos/${r.id}`}
-                      alt=""
-                      className="row-thumb"
-                    />
+                    <button
+                      type="button"
+                      className="thumb-btn"
+                      onClick={() => setPreviewId(r.id)}
+                      title="Click to enlarge"
+                    >
+                      <img
+                        src={`/api/photos/${r.id}`}
+                        alt=""
+                        className="row-thumb"
+                      />
+                    </button>
                   </td>
                   <td title={r.originalName}>
                     <div className="filename">{r.originalName}</div>
@@ -378,6 +350,20 @@ export default function UploadPage() {
                     ) : null}
                   </td>
                   <td>{renderMetadataBadge(r)}</td>
+                  <td>
+                    {r.overlayApp || r.overlayDetected ? (
+                      <>
+                        <div className="dim">{r.overlayApp ?? "detected"}</div>
+                        {r.overlayAddress ? (
+                          <div className="filename" title={r.overlayAddress}>
+                            {r.overlayAddress}
+                          </div>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </td>
                   <td>
                     {r.takenAt ? (
                       <>
@@ -390,26 +376,9 @@ export default function UploadPage() {
                   </td>
                   <td className={r.hasGps ? "" : "muted"}>
                     {r.latitude != null ? r.latitude.toFixed(5) : "—"}
-                    {r.gpsAccuracy != null ? (
-                      <div className="dim">±{r.gpsAccuracy.toFixed(1)} m</div>
-                    ) : null}
                   </td>
                   <td className={r.hasGps ? "" : "muted"}>
                     {r.longitude != null ? r.longitude.toFixed(5) : "—"}
-                    {r.altitude != null ? (
-                      <div className="dim">{r.altitude.toFixed(0)} m alt</div>
-                    ) : null}
-                  </td>
-                  <td>
-                    <div>
-                      {[r.cameraMake, r.cameraModel].filter(Boolean).join(" ") ||
-                        "—"}
-                    </div>
-                    {r.lensModel ? <div className="dim">{r.lensModel}</div> : null}
-                    {r.software ? <div className="dim">{r.software}</div> : null}
-                  </td>
-                  <td>
-                    {formatExposure(r)}
                   </td>
                   <td title={r.sourcePath}>
                     <div className="filename muted">
@@ -439,32 +408,113 @@ export default function UploadPage() {
           )}
         </div>
       )}
+
+      {preview && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setPreviewId(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className="modal-close"
+              onClick={() => setPreviewId(null)}
+              aria-label="Close"
+            >
+              ×
+            </button>
+            <img
+              src={`/api/photos/${preview.id}`}
+              alt={preview.originalName}
+              className="modal-img"
+            />
+            <div className="modal-meta">
+              <div className="modal-title">{preview.originalName}</div>
+              <div className="modal-row">
+                {renderMetadataBadge(preview)}
+                {preview.overlayApp ? (
+                  <span className="badge ok" style={{ marginLeft: 8 }}>
+                    {preview.overlayApp}
+                  </span>
+                ) : null}
+              </div>
+              {preview.takenAt ? (
+                <div>
+                  <strong>Taken:</strong>{" "}
+                  {new Date(preview.takenAt).toLocaleString()}{" "}
+                  <span className="dim">
+                    ({tsSourceLabel(preview.timestampSource)})
+                  </span>
+                </div>
+              ) : null}
+              {preview.latitude != null && preview.longitude != null ? (
+                <div>
+                  <strong>GPS:</strong> {preview.latitude.toFixed(6)},{" "}
+                  {preview.longitude.toFixed(6)}{" "}
+                  <span className="dim">(source: {preview.gpsSource})</span>
+                </div>
+              ) : null}
+              {preview.overlayAddress ? (
+                <div>
+                  <strong>Overlay address:</strong> {preview.overlayAddress}
+                </div>
+              ) : null}
+              <div className="dim">
+                {preview.width && preview.height
+                  ? `${preview.width} × ${preview.height} · `
+                  : ""}
+                {formatSize(preview.size)}
+                {preview.sourcePath && preview.sourcePath !== preview.originalName
+                  ? ` · ${preview.sourcePath}`
+                  : ""}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function renderMetadataBadge(r: Uploaded) {
-  // 3-state: GPS found / EXIF only / nothing at all.
-  const keys = r.exifKeys ?? [];
-  const tooltip = keys.length
-    ? `${keys.length} fields: ${keys.slice(0, 40).join(", ")}${keys.length > 40 ? ", …" : ""}`
-    : "No EXIF, XMP, IPTC or PNG metadata found";
-  if (r.hasGps) {
+  if (r.gpsSource === "overlay") {
     return (
-      <span className="badge ok" title={tooltip}>
-        GPS · {r.exifFieldCount}
+      <span
+        className="badge ok"
+        title={`Overlay parsed${r.overlayApp ? ` from ${r.overlayApp}` : ""}`}
+      >
+        GPS · overlay
+      </span>
+    );
+  }
+  if (r.gpsSource === "exif") {
+    return (
+      <span className="badge warn" title="No readable overlay — falling back to EXIF GPS">
+        GPS · EXIF
+      </span>
+    );
+  }
+  if (r.overlayDetected) {
+    return (
+      <span
+        className="badge warn"
+        title="An overlay was detected on the image but its coordinates were not parseable from OCR"
+      >
+        overlay · unreadable
       </span>
     );
   }
   if (r.hasExif) {
     return (
-      <span className="badge warn" title={tooltip}>
-        EXIF · {r.exifFieldCount} · no GPS
+      <span className="badge warn" title={`${r.exifFieldCount} EXIF fields, no GPS`}>
+        EXIF · no GPS
       </span>
     );
   }
   return (
-    <span className="badge err" title={tooltip}>
+    <span className="badge err" title="No overlay, no EXIF — image has no extractable metadata">
       no metadata
     </span>
   );
@@ -472,6 +522,8 @@ function renderMetadataBadge(r: Uploaded) {
 
 function tsSourceLabel(source: Uploaded["timestampSource"]) {
   switch (source) {
+    case "overlay":
+      return "from overlay OCR";
     case "exif":
       return "from EXIF";
     case "gps":
@@ -483,21 +535,6 @@ function tsSourceLabel(source: Uploaded["timestampSource"]) {
     default:
       return "";
   }
-}
-
-function formatExposure(r: Uploaded) {
-  const parts: string[] = [];
-  if (r.focalLength != null) parts.push(`${r.focalLength}mm`);
-  if (r.fNumber != null) parts.push(`f/${r.fNumber}`);
-  if (r.exposureTime != null) {
-    parts.push(
-      r.exposureTime >= 1
-        ? `${r.exposureTime}s`
-        : `1/${Math.round(1 / r.exposureTime)}s`,
-    );
-  }
-  if (r.iso != null) parts.push(`ISO${r.iso}`);
-  return parts.length ? parts.join(" · ") : "—";
 }
 
 function selectionSummary(mode: Mode, files: File[]) {

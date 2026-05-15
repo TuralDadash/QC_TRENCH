@@ -37,8 +37,66 @@ a:hover {
   letter-spacing: 0.5px;
 }
 
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
 .topbar nav a {
   margin-left: 16px;
+}
+
+.topbar-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none !important;
+  color: #e7ebf0;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: #0f1115;
+  border: 1px solid #2c3340;
+  max-width: 320px;
+}
+
+.topbar-progress:hover {
+  background: #1a1f29;
+}
+
+.topbar-progress-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar-progress-bar {
+  position: relative;
+  display: inline-block;
+  width: 80px;
+  height: 5px;
+  background: #222831;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.topbar-progress-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #6ea8fe);
+  transition: width 0.25s ease-out;
+}
+
+.topbar-progress-bar.done .topbar-progress-fill {
+  background: linear-gradient(90deg, #16a34a, #4ade80);
+}
+
+.topbar-progress-bar.indeterminate .topbar-progress-fill {
+  width: 35% !important;
+  animation: indeterminate 1.2s ease-in-out infinite;
 }
 
 main {
@@ -193,9 +251,30 @@ main {
 }
 
 .progress-label {
-  font-size: 12px;
+  font-size: 13px;
+  color: #e7ebf0;
+  margin-top: 6px;
+}
+
+.progress-sub {
+  font-size: 11px;
   color: #8a93a3;
-  margin-top: 4px;
+  margin-top: 2px;
+}
+
+.progress .bar.indeterminate .fill {
+  width: 35%;
+  background: linear-gradient(90deg, #2563eb, #6ea8fe);
+  animation: indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
 }
 
 .badge {
@@ -242,6 +321,147 @@ main {
 
 .muted {
   color: #8a93a3;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: #e7ebf0;
+  border: 1px solid #2c3340;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: #1c2230;
+}
+
+.btn-ghost:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-ghost.danger {
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.btn-ghost.danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.6);
+}
+
+.thumb-btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: zoom-in;
+  display: block;
+}
+
+.thumb-btn:hover .row-thumb {
+  outline: 2px solid #6ea8fe;
+  outline-offset: 1px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 1000;
+  animation: fade-in 0.15s ease-out;
+}
+
+.modal-content {
+  background: #161a21;
+  border: 1px solid #222831;
+  border-radius: 10px;
+  max-width: min(1100px, 95vw);
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  animation: pop-in 0.18s ease-out;
+}
+
+.modal-img {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  background: #0f1115;
+}
+
+.modal-meta {
+  padding: 16px 20px;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.modal-title {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.modal-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modal-close {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  color: white;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.modal-close:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .results {

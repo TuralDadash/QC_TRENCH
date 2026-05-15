@@ -12,26 +12,22 @@ export type PhotoRecord = {
   sourcePath?: string;
   latitude: number | null;
   longitude: number | null;
-  altitude: number | null;
-  gpsAccuracy: number | null;
-  gpsDirection: number | null;
   takenAt: string | null;
-  cameraMake: string | null;
-  cameraModel: string | null;
-  lensModel: string | null;
-  software: string | null;
-  orientation: number | null;
   width: number | null;
   height: number | null;
-  focalLength: number | null;
-  fNumber: number | null;
-  iso: number | null;
-  exposureTime: number | null;
   hasGps: boolean;
   hasExif: boolean;
   exifFieldCount: number;
   exifKeys?: string[];
-  timestampSource: "exif" | "gps" | "filename" | "mtime" | null;
+  timestampSource: "exif" | "gps" | "filename" | "mtime" | "overlay" | null;
+  gpsSource: "exif" | "overlay" | null;
+  overlayApp: string | null;
+  overlayLatitude: number | null;
+  overlayLongitude: number | null;
+  overlayAddress: string | null;
+  overlayTakenAt: string | null;
+  overlayFound: boolean;
+  overlayDetected: boolean;
 };
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
@@ -56,6 +52,19 @@ export async function loadIndex(): Promise<PhotoRecord[]> {
 export async function saveIndex(records: PhotoRecord[]) {
   await ensureDirs();
   await fs.writeFile(INDEX_FILE, JSON.stringify(records, null, 2), "utf8");
+}
+
+export async function clearAll() {
+  await ensureDirs();
+  // Empty the photos directory wholesale (in case earlier wipes left orphans
+  // not referenced by the current index).
+  const entries = await fs.readdir(PHOTOS_DIR).catch(() => [] as string[]);
+  await Promise.all(
+    entries.map((name) =>
+      fs.unlink(path.join(PHOTOS_DIR, name)).catch(() => undefined),
+    ),
+  );
+  await saveIndex([]);
 }
 
 export async function appendRecords(newOnes: PhotoRecord[]) {
