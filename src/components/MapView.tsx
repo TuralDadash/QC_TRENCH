@@ -91,13 +91,6 @@ export default function MapView() {
   }, []);
 
   useEffect(() => {
-    return () => {
-      mapRef.current?.remove();
-      mapRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
     let cancelled = false;
 
     async function load() {
