@@ -19,7 +19,7 @@ export default function UploadStatusBadge() {
       pct = (phase.extracting.done / phase.extracting.total) * 100;
       label = `${phase.extracting.done}/${phase.extracting.total}`;
     } else {
-      label = "…";
+      label = "...";
     }
   } else if (phase.kind === "processing") {
     pct = phase.total > 0 ? (phase.done / phase.total) * 100 : 0;
@@ -27,26 +27,26 @@ export default function UploadStatusBadge() {
     label = eta || `${phase.done}/${phase.total}`;
   } else if (phase.kind === "complete") {
     pct = 100;
-    label = "✓";
+    label = "done";
   }
 
   return (
-    <Link href="/upload" className="sidebar-upload-badge" title="Upload in progress">
-      <div className={`sidebar-upload-ring ${phase.kind === "complete" ? "done" : ""} ${indeterminate ? "indeterminate" : ""}`}>
-        <svg viewBox="0 0 36 36" className="sidebar-upload-svg">
-          <circle cx="18" cy="18" r="15" className="sidebar-upload-track" />
+    <Link href="/upload" className="upload-badge" title="Upload in progress">
+      <div className={`upload-ring ${phase.kind === "complete" ? "done" : ""} ${indeterminate ? "indeterminate" : ""}`}>
+        <svg viewBox="0 0 36 36" className="upload-ring-svg">
+          <circle cx="18" cy="18" r="15" className="upload-ring-track" />
           {!indeterminate && (
             <circle
               cx="18"
               cy="18"
               r="15"
-              className="sidebar-upload-progress"
+              className="upload-ring-progress"
               strokeDasharray={`${(pct / 100) * 94.25} 94.25`}
               strokeDashoffset="23.56"
             />
           )}
         </svg>
-        <span className="sidebar-upload-label">{label}</span>
+        <span className="upload-ring-label">{label}</span>
       </div>
     </Link>
   );

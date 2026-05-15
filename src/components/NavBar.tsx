@@ -7,9 +7,10 @@ import UploadStatusBadge from "@/components/UploadStatusBadge";
 const ITEMS = [
   {
     href: "/",
-    title: "Map",
+    label: "Map",
+    step: "01",
     icon: (
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
         <path d="M1 5.5l6-3 6 3 6-3v12l-6 3-6-3-6 3v-12z" />
         <path d="M7 2.5v12M13 5.5v12" />
       </svg>
@@ -17,9 +18,10 @@ const ITEMS = [
   },
   {
     href: "/upload",
-    title: "Upload",
+    label: "Upload",
+    step: "02",
     icon: (
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
         <path d="M10 13V4M6 7l4-4 4 4" />
         <path d="M3 14v1a2 2 0 002 2h10a2 2 0 002-2v-1" />
       </svg>
@@ -27,9 +29,10 @@ const ITEMS = [
   },
   {
     href: "/report",
-    title: "Report",
+    label: "Report",
+    step: "03",
     icon: (
-      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="2" width="14" height="16" rx="2" />
         <path d="M7 7h6M7 10.5h6M7 14h4" />
       </svg>
@@ -41,23 +44,31 @@ export default function NavBar() {
   const path = usePathname();
 
   return (
-    <nav className="sidenav">
-      <div className="nav-brand" />
-      <div className="nav-items">
+    <header className="topnav">
+      <div className="topnav-brand">
+        <div className="brand-mark" />
+        <span className="brand-name">APG Audit</span>
+      </div>
+
+      <div className="topnav-divider" />
+
+      <nav className="topnav-items">
         {ITEMS.map((item) => (
           <Link
             key={item.href}
             href={item.href}
-            title={item.title}
-            className={`nav-item ${path === item.href ? "active" : ""}`}
+            className={`topnav-item ${path === item.href ? "active" : ""}`}
           >
-            {item.icon}
+            <span className="topnav-step">{item.step}</span>
+            <span className="topnav-icon">{item.icon}</span>
+            <span className="topnav-label">{item.label}</span>
           </Link>
         ))}
-      </div>
-      <div className="nav-bottom">
+      </nav>
+
+      <div className="topnav-end">
         <UploadStatusBadge />
       </div>
-    </nav>
+    </header>
   );
 }
