@@ -17,6 +17,13 @@ export const runtime = "nodejs";
 
 const IMAGE_EXT_RE = /\.(jpe?g|png|webp|heic|heif|tiff?)$/i;
 
+// Parallel OCR — CPU-bound (sharp + tesseract subprocesses). 4 is a safe
+// default for an 8-core machine; bump via env when running on bigger boxes.
+const OCR_CONCURRENCY = Math.max(
+  1,
+  Number(process.env.OCR_CONCURRENCY ?? 4),
+);
+
 export async function GET() {
   const records = await loadIndex();
   const sorted = [...records].sort((a, b) =>
@@ -239,73 +246,6 @@ type Job = {
 };
 
 export async function POST(req: NextRequest) {
-  const form = await req.formData();
-  const files = form.getAll("files") as File[];
-  const paths = form.getAll("paths") as string[];
-  const mtimes = form.getAll("mtimes") as string[];
-  const project = (form.get("project") as string) || undefined;
-  const lotId = (form.get("lotId") as string) || undefined;
-
-  if (files.length === 0) {
-    return new Response(JSON.stringify({ error: "no files" }), {
-      status: 400,
-    });
-  }
-
-  await fs.mkdir(PHOTOS_DIR, { recursive: true });
-
-  const jobs: Job[] = [];
-  const skipped: { name: string; reason: string }[] = [];
-
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    if (!file || typeof file === "string") continue;
-    const nameLower = file.name.toLowerCase();
-    const buf = Buffer.from(await file.arrayBuffer());
-    const mtime = mtimes[i] ? Number(mtimes[i]) : null;
-
-    if (nameLower.endsWith(".zip")) {
-      const archiveProject = project || file.name.replace(/\.zip$/i, "");
-      let zip: AdmZip;
-      try {
-        zip = new AdmZip(buf);
-      } catch {
-        skipped.push({ name: file.name, reason: "invalid zip" });
-        continue;
-      }
-      for (const entry of zip.getEntries()) {
-        if (entry.isDirectory) continue;
-        const entryName = entry.entryName;
-        const base = entryName.split("/").pop() || entryName;
-        if (base.startsWith(".") || entryName.startsWith("__MACOSX")) continue;
-        if (!IMAGE_EXT_RE.test(base)) {
-          skipped.push({ name: entryName, reason: "not an image" });
-          continue;
-        }
-        const zipEntryMtime = entry.header.time?.getTime() ?? null;
-        jobs.push({
-          buf: entry.getData(),
-          originalName: base,
-          sourcePath: entryName,
-          project: archiveProject,
-          lotId,
-          fallbackMtimeMs: zipEntryMtime,
-        });
-      }
-    } else if (IMAGE_EXT_RE.test(file.name)) {
-      jobs.push({
-        buf,
-        originalName: file.name,
-        sourcePath: paths[i] || file.name,
-        project,
-        lotId,
-        fallbackMtimeMs: mtime,
-      });
-    } else {
-      skipped.push({ name: file.name, reason: "unsupported type" });
-    }
-  }
-
   const stream = new ReadableStream({
     async start(controller) {
       const enc = new TextEncoder();
@@ -313,18 +253,138 @@ export async function POST(req: NextRequest) {
         controller.enqueue(enc.encode(JSON.stringify(obj) + "\n"));
       };
 
-      write({ event: "start", total: jobs.length });
-      const records: PhotoRecord[] = [];
-      for (let i = 0; i < jobs.length; i++) {
-        const rec = await processImage(jobs[i]);
-        records.push(rec);
-        write({
-          event: "processed",
-          index: i + 1,
-          total: jobs.length,
-          record: rec,
-        });
+      // Immediately tell the client we've started processing — surfaces the
+      // "between upload-complete and first OCR" pre-phase so the UI can
+      // render a loader instead of going silent.
+      write({ event: "phase", phase: "preparing" });
+
+      let form: FormData;
+      try {
+        form = await req.formData();
+      } catch (err) {
+        write({ event: "error", message: (err as Error).message });
+        controller.close();
+        return;
       }
+
+      const files = form.getAll("files") as File[];
+      const paths = form.getAll("paths") as string[];
+      const mtimes = form.getAll("mtimes") as string[];
+      const project = (form.get("project") as string) || undefined;
+      const lotId = (form.get("lotId") as string) || undefined;
+
+      if (files.length === 0) {
+        write({ event: "error", message: "no files" });
+        controller.close();
+        return;
+      }
+
+      await fs.mkdir(PHOTOS_DIR, { recursive: true });
+
+      const jobs: Job[] = [];
+      const skipped: { name: string; reason: string }[] = [];
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (!file || typeof file === "string") continue;
+        const nameLower = file.name.toLowerCase();
+        const buf = Buffer.from(await file.arrayBuffer());
+        const mtime = mtimes[i] ? Number(mtimes[i]) : null;
+
+        if (nameLower.endsWith(".zip")) {
+          const archiveProject = project || file.name.replace(/\.zip$/i, "");
+          let zip: AdmZip;
+          try {
+            zip = new AdmZip(buf);
+          } catch {
+            skipped.push({ name: file.name, reason: "invalid zip" });
+            continue;
+          }
+          const entries = zip.getEntries();
+          write({
+            event: "extracting",
+            archive: file.name,
+            done: 0,
+            total: entries.length,
+          });
+          let lastEmit = Date.now();
+          for (let ei = 0; ei < entries.length; ei++) {
+            const entry = entries[ei];
+            if (entry.isDirectory) continue;
+            const entryName = entry.entryName;
+            const base = entryName.split("/").pop() || entryName;
+            if (base.startsWith(".") || entryName.startsWith("__MACOSX")) continue;
+            if (!IMAGE_EXT_RE.test(base)) {
+              skipped.push({ name: entryName, reason: "not an image" });
+              continue;
+            }
+            const zipEntryMtime = entry.header.time?.getTime() ?? null;
+            jobs.push({
+              buf: entry.getData(),
+              originalName: base,
+              sourcePath: entryName,
+              project: archiveProject,
+              lotId,
+              fallbackMtimeMs: zipEntryMtime,
+            });
+            // Throttle progress events to ~once every 150ms to keep the
+            // stream readable without flooding it.
+            if (Date.now() - lastEmit > 150 || ei === entries.length - 1) {
+              write({
+                event: "extracting",
+                archive: file.name,
+                done: ei + 1,
+                total: entries.length,
+              });
+              lastEmit = Date.now();
+            }
+          }
+        } else if (IMAGE_EXT_RE.test(file.name)) {
+          jobs.push({
+            buf,
+            originalName: file.name,
+            sourcePath: paths[i] || file.name,
+            project,
+            lotId,
+            fallbackMtimeMs: mtime,
+          });
+        } else {
+          skipped.push({ name: file.name, reason: "unsupported type" });
+        }
+      }
+
+      write({
+        event: "start",
+        total: jobs.length,
+        concurrency: OCR_CONCURRENCY,
+      });
+
+      // Parallel OCR. We mutate a shared next-index counter so each worker
+      // picks the next available job; results are written to the stream as
+      // they complete (so order doesn't strictly mirror input order).
+      const records: PhotoRecord[] = [];
+      let nextIndex = 0;
+      let done = 0;
+      const workers = Array.from(
+        { length: Math.min(OCR_CONCURRENCY, jobs.length) },
+        async () => {
+          while (true) {
+            const i = nextIndex++;
+            if (i >= jobs.length) break;
+            const rec = await processImage(jobs[i]);
+            records.push(rec);
+            done++;
+            write({
+              event: "processed",
+              done,
+              total: jobs.length,
+              record: rec,
+            });
+          }
+        },
+      );
+      await Promise.all(workers);
+
       if (records.length > 0) await appendRecords(records);
       write({ event: "done", skipped });
       controller.close();

@@ -1,61 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  formatEta,
+  useUpload,
+  type Uploaded,
+} from "@/context/UploadProvider";
 
-type Uploaded = {
-  id: string;
-  originalName: string;
-  size: number;
-  project?: string;
-  lotId?: string;
-  sourcePath?: string;
-  latitude: number | null;
-  longitude: number | null;
-  altitude: number | null;
-  gpsAccuracy: number | null;
-  gpsDirection: number | null;
-  takenAt: string | null;
-  cameraMake: string | null;
-  cameraModel: string | null;
-  lensModel: string | null;
-  software: string | null;
-  orientation: number | null;
-  width: number | null;
-  height: number | null;
-  focalLength: number | null;
-  fNumber: number | null;
-  iso: number | null;
-  exposureTime: number | null;
-  hasGps: boolean;
-  hasExif: boolean;
-  exifFieldCount: number;
-  exifKeys?: string[];
-  timestampSource: "exif" | "gps" | "filename" | "mtime" | "overlay" | null;
-  gpsSource: "exif" | "overlay" | null;
-  overlayApp: string | null;
-  overlayLatitude: number | null;
-  overlayLongitude: number | null;
-  overlayAddress: string | null;
-  overlayTakenAt: string | null;
-  overlayFound: boolean;
-  overlayDetected: boolean;
-};
-
-type Skipped = { name: string; reason: string };
 type Mode = "files" | "folder" | "archive";
 
-type Phase =
-  | { kind: "idle" }
-  | { kind: "uploading"; pct: number }
-  | { kind: "processing"; done: number; total: number }
-  | { kind: "complete" };
-
-type StreamEvent =
-  | { event: "start"; total: number }
-  | { event: "processed"; index: number; total: number; record: Uploaded }
-  | { event: "done"; skipped: Skipped[] };
-
 export default function UploadPage() {
+  const { phase, results, skipped, startUpload, resetAll } = useUpload();
+
   const filesRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
   const archiveRef = useRef<HTMLInputElement>(null);
@@ -64,20 +20,9 @@ export default function UploadPage() {
   const [project, setProject] = useState("");
   const [lotId, setLotId] = useState("");
   const [files, setFiles] = useState<File[]>([]);
-  const [results, setResults] = useState<Uploaded[]>([]);
-  const [skipped, setSkipped] = useState<Skipped[]>([]);
-  const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [dragOver, setDragOver] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
-
-  // Load existing photos on mount so navigating to the map and back keeps state.
-  useEffect(() => {
-    fetch("/api/photos")
-      .then((r) => r.json())
-      .then((d) => setResults(d.photos || []))
-      .catch(() => {});
-  }, []);
 
   // Close preview on Escape.
   useEffect(() => {
@@ -88,26 +33,6 @@ export default function UploadPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [previewId]);
-
-  async function resetAll() {
-    if (resetting) return;
-    if (
-      !window.confirm(
-        "Delete all uploaded photos and metadata? This cannot be undone.",
-      )
-    )
-      return;
-    setResetting(true);
-    try {
-      await fetch("/api/photos", { method: "DELETE" });
-      setResults([]);
-      setSkipped([]);
-    } finally {
-      setResetting(false);
-    }
-  }
-
-  const preview = previewId ? results.find((r) => r.id === previewId) : null;
 
   function pickFiles(list: FileList | null) {
     if (!list) return;
@@ -127,97 +52,26 @@ export default function UploadPage() {
     clearInputs();
   }
 
-  function uploadWithProgress(
-    fd: FormData,
-    onUploadPct: (pct: number) => void,
-    onEvent: (ev: StreamEvent) => void,
-  ): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      let buffer = "";
-      let lastLen = 0;
-
-      const drain = () => {
-        const txt = xhr.responseText;
-        const chunk = txt.slice(lastLen);
-        lastLen = txt.length;
-        buffer += chunk;
-        let nl;
-        while ((nl = buffer.indexOf("\n")) >= 0) {
-          const line = buffer.slice(0, nl).trim();
-          buffer = buffer.slice(nl + 1);
-          if (!line) continue;
-          try {
-            onEvent(JSON.parse(line) as StreamEvent);
-          } catch {
-            // skip malformed line
-          }
-        }
-      };
-
-      xhr.open("POST", "/api/photos");
-      xhr.upload.addEventListener("progress", (e) => {
-        if (e.lengthComputable) onUploadPct(e.loaded / e.total);
-      });
-      xhr.upload.addEventListener("load", () => onUploadPct(1));
-      xhr.addEventListener("progress", drain);
-      xhr.addEventListener("load", () => {
-        drain();
-        if (xhr.status >= 200 && xhr.status < 300) resolve();
-        else reject(new Error(`HTTP ${xhr.status}`));
-      });
-      xhr.addEventListener("error", () => reject(new Error("network error")));
-      xhr.send(fd);
-    });
+  function submit() {
+    if (files.length === 0) return;
+    startUpload(files, { project, lotId });
+    setFiles([]);
+    clearInputs();
   }
 
-  async function submit() {
-    if (files.length === 0) return;
-    setPhase({ kind: "uploading", pct: 0 });
-    setSkipped([]);
-
-    const fd = new FormData();
-    files.forEach((f) => {
-      fd.append("files", f);
-      const rel = (f as File & { webkitRelativePath?: string })
-        .webkitRelativePath;
-      fd.append("paths", rel && rel.length > 0 ? rel : f.name);
-      fd.append("mtimes", String(f.lastModified || 0));
-    });
-    if (project) fd.append("project", project);
-    if (lotId) fd.append("lotId", lotId);
-
-    const newRecords: Uploaded[] = [];
-
+  async function doReset() {
+    if (resetting) return;
+    if (
+      !window.confirm(
+        "Delete all uploaded photos and metadata? This cannot be undone.",
+      )
+    )
+      return;
+    setResetting(true);
     try {
-      await uploadWithProgress(
-        fd,
-        (pct) =>
-          setPhase((p) => (p.kind === "uploading" ? { kind: "uploading", pct } : p)),
-        (event) => {
-          if (event.event === "start") {
-            setPhase({ kind: "processing", done: 0, total: event.total });
-          } else if (event.event === "processed") {
-            newRecords.push(event.record);
-            // Stream the record into the table immediately so the user sees it appear.
-            setResults((prev) => [event.record, ...prev]);
-            setPhase({
-              kind: "processing",
-              done: event.index,
-              total: event.total,
-            });
-          } else if (event.event === "done") {
-            setSkipped(event.skipped || []);
-          }
-        },
-      );
-      setPhase({ kind: "complete" });
-      setFiles([]);
-      clearInputs();
-      setTimeout(() => setPhase({ kind: "idle" }), 1500);
-    } catch (err) {
-      setPhase({ kind: "idle" });
-      alert("Upload failed: " + (err as Error).message);
+      await resetAll();
+    } finally {
+      setResetting(false);
     }
   }
 
@@ -230,20 +84,42 @@ export default function UploadPage() {
     return { total, withGps, exifNoGps, noMeta, withTime };
   }, [results]);
 
+  // Drive the main progress bar from the global phase.
   let barPct = 0;
-  let label = "";
+  let primaryLabel = "";
+  let secondaryLabel = "";
   if (phase.kind === "uploading") {
     barPct = phase.pct * 100;
-    label = `Uploading ${Math.round(barPct)}%`;
+    primaryLabel = `Uploading ${Math.round(barPct)}%`;
+    secondaryLabel = "Sending files to server";
+  } else if (phase.kind === "preparing") {
+    if (phase.extracting && phase.extracting.total > 0) {
+      barPct = (phase.extracting.done / phase.extracting.total) * 100;
+      primaryLabel = `Extracting archive`;
+      secondaryLabel = `${phase.extracting.done} / ${phase.extracting.total} entries — ${phase.extracting.archive}`;
+    } else {
+      barPct = 0;
+      primaryLabel = phase.message;
+      secondaryLabel = "Server is reading the upload";
+    }
   } else if (phase.kind === "processing") {
     barPct = phase.total > 0 ? (phase.done / phase.total) * 100 : 0;
-    label = `Extracting metadata — ${phase.done} / ${phase.total}`;
+    primaryLabel = `Extracting metadata — ${phase.done} / ${phase.total}`;
+    const eta = formatEta(phase.etaMs);
+    secondaryLabel = eta || "Calculating remaining time…";
   } else if (phase.kind === "complete") {
     barPct = 100;
-    label = "Complete";
+    primaryLabel = "Complete";
+    secondaryLabel = "";
   }
 
-  const busy = phase.kind === "uploading" || phase.kind === "processing";
+  const busy =
+    phase.kind === "uploading" ||
+    phase.kind === "preparing" ||
+    phase.kind === "processing";
+
+  const indeterminate =
+    phase.kind === "preparing" && !phase.extracting;
 
   const dropLabel =
     mode === "folder"
@@ -252,13 +128,16 @@ export default function UploadPage() {
         ? "Click to pick a .zip archive"
         : "Click or drop image files here";
 
+  const preview = previewId ? results.find((r) => r.id === previewId) : null;
+
   return (
     <div className="upload-page wide">
       <h1>Upload construction photos</h1>
       <p style={{ color: "#8a93a3", marginTop: -8 }}>
-        Upload individual files, a whole folder, or a ZIP archive. Each image is
-        scanned for EXIF metadata (GPS, timestamp, camera, lens, exposure) and
-        added to the map.
+        Upload individual files, a whole folder, or a ZIP archive. Each image
+        is OCR-scanned for overlay metadata (GPS Map Camera and similar) and
+        cross-checked against EXIF. You can navigate to the map while an
+        upload is running — progress will keep going in the background.
       </p>
 
       <div className="seg">
@@ -343,11 +222,17 @@ export default function UploadPage() {
         {phase.kind !== "idle" && (
           <div className="progress">
             <div
-              className={`bar ${busy ? "active" : ""} ${phase.kind === "complete" ? "done" : ""}`}
+              className={`bar ${busy ? "active" : ""} ${phase.kind === "complete" ? "done" : ""} ${indeterminate ? "indeterminate" : ""}`}
             >
-              <div className="fill" style={{ width: `${barPct}%` }} />
+              <div
+                className="fill"
+                style={indeterminate ? undefined : { width: `${barPct}%` }}
+              />
             </div>
-            <div className="progress-label">{label}</div>
+            <div className="progress-label">{primaryLabel}</div>
+            {secondaryLabel ? (
+              <div className="progress-sub">{secondaryLabel}</div>
+            ) : null}
           </div>
         )}
         <button
@@ -386,7 +271,7 @@ export default function UploadPage() {
             <button
               type="button"
               className="btn-ghost danger"
-              onClick={resetAll}
+              onClick={doReset}
               disabled={resetting || results.length === 0}
               style={{ marginLeft: "auto" }}
             >
@@ -517,10 +402,7 @@ export default function UploadPage() {
           role="dialog"
           aria-modal="true"
         >
-          <div
-            className="modal-content"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <button
               type="button"
               className="modal-close"
@@ -592,8 +474,6 @@ export default function UploadPage() {
 }
 
 function renderMetadataBadge(r: Uploaded) {
-  // Composite badge — overlay status (audit source) + EXIF status. The overlay
-  // is the primary GPS signal; EXIF is the fallback.
   if (r.gpsSource === "overlay") {
     return (
       <span

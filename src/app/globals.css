@@ -37,8 +37,66 @@ a:hover {
   letter-spacing: 0.5px;
 }
 
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
 .topbar nav a {
   margin-left: 16px;
+}
+
+.topbar-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none !important;
+  color: #e7ebf0;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: #0f1115;
+  border: 1px solid #2c3340;
+  max-width: 320px;
+}
+
+.topbar-progress:hover {
+  background: #1a1f29;
+}
+
+.topbar-progress-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar-progress-bar {
+  position: relative;
+  display: inline-block;
+  width: 80px;
+  height: 5px;
+  background: #222831;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.topbar-progress-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #6ea8fe);
+  transition: width 0.25s ease-out;
+}
+
+.topbar-progress-bar.done .topbar-progress-fill {
+  background: linear-gradient(90deg, #16a34a, #4ade80);
+}
+
+.topbar-progress-bar.indeterminate .topbar-progress-fill {
+  width: 35% !important;
+  animation: indeterminate 1.2s ease-in-out infinite;
 }
 
 main {
@@ -193,9 +251,30 @@ main {
 }
 
 .progress-label {
-  font-size: 12px;
+  font-size: 13px;
+  color: #e7ebf0;
+  margin-top: 6px;
+}
+
+.progress-sub {
+  font-size: 11px;
   color: #8a93a3;
-  margin-top: 4px;
+  margin-top: 2px;
+}
+
+.progress .bar.indeterminate .fill {
+  width: 35%;
+  background: linear-gradient(90deg, #2563eb, #6ea8fe);
+  animation: indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
 }
 
 .badge {

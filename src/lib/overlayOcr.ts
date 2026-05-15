@@ -87,11 +87,12 @@ async function multiPassOcr(source: Buffer): Promise<OcrPasses> {
     .normalise()
     .toBuffer();
 
-  const [bottom, top, full] = await Promise.all([
-    runTesseract(prepBottom, 6).catch(() => ""),
-    runTesseract(prepTop, 6).catch(() => ""),
-    runTesseract(prepFull, 11).catch(() => ""),
-  ]);
+  // Serial within an image — concurrency is managed by the outer worker
+  // pool. Running these in parallel here multiplies the number of tesseract
+  // processes by 3 and trashes CPU contention.
+  const bottom = await runTesseract(prepBottom, 6).catch(() => "");
+  const top = await runTesseract(prepTop, 6).catch(() => "");
+  const full = await runTesseract(prepFull, 11).catch(() => "");
 
   return {
     bandText: [top, bottom].join("\n"),
