@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code when working with this repository.
 
+## Scope and documentation language
+
+Only modify files inside `backend/`. Files outside `backend/` (e.g. `scope.md`, root `README.md`, sibling project folders) are owned by other contributors — leave them alone, even when the user asks for repo-wide changes.
+
+All Markdown files (`*.md`) inside `backend/` are written in English. When creating or editing a `.md` file here, write English even if the conversation with the user is in another language.
+
 ## Project
 
 **Fiber Trench QC** is a hackathon backend for the ÖGIG / Sustainista trench-documentation challenge. It ingests trench photos plus a GeoJSON route, extracts field evidence from the images, geo-matches photos to route segments, detects suspicious reuse, and classifies route coverage for acceptance review.
