@@ -27,6 +27,10 @@ type Photo = {
   lotId?: string;
   hasGps: boolean;
   takenAt: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  gpsSource: "exif" | "overlay" | null;
+  size: number;
   analysis: PhotoAnalysis | null;
 };
 
@@ -259,11 +263,15 @@ export default function FlowPage() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [viewMode, setViewMode] = useState<"map" | "table">("map");
+  const [tableFilter, setTableFilter] = useState<"all" | 1 | 2 | 3 | 4 | "no-gps" | "dup">("all");
 
   const mapSectionRef = useRef<HTMLElement>(null);
   const reportSectionRef = useRef<HTMLElement>(null);
   const prevAnalysedRef = useRef(0);
   const [mapExpanded, setMapExpanded] = useState(false);
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const [mapCatFilter, setMapCatFilter] = useState<"all"|"cat1"|"cat2"|"cat3"|"cat4"|"no-gps">("all");
 
   useEffect(() => {
     if (!previewId && !mapExpanded) return;
@@ -288,13 +296,7 @@ export default function FlowPage() {
     return () => clearInterval(id);
   }, []);
 
-  const showMap = photos.length > 0 || uploadedPhotos.length > 0 || phase.kind !== "idle";
   const analysedCount = photos.filter((p) => p.analysis).length;
-  const showReport = analysedCount > 0;
-  const mapLocked = !showMap;
-  const reportLocked = !showReport;
-  const hasPhotos = uploadedPhotos.length > 0;
-  const hasAnalysis = analysedCount > 0;
 
   useEffect(() => {
     let io: IntersectionObserver;
@@ -317,7 +319,7 @@ export default function FlowPage() {
       cancelAnimationFrame(rafId);
       io?.disconnect();
     };
-  }, [hasPhotos, hasAnalysis]);
+  }, [photos.length, analysedCount]);
 
   useEffect(() => {
     if (phase.kind === "complete") {
@@ -335,6 +337,18 @@ export default function FlowPage() {
     }
     prevAnalysedRef.current = analysedCount;
   }, [analysedCount]);
+
+  useEffect(() => {
+    const main = document.querySelector("main");
+    if (!main) return;
+    const onScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = main;
+      const max = scrollHeight - clientHeight;
+      setScrollProgress(max > 0 ? scrollTop / max : 0);
+    };
+    main.addEventListener("scroll", onScroll, { passive: true });
+    return () => main.removeEventListener("scroll", onScroll);
+  }, []);
 
   function pickFiles(list: FileList | null) {
     if (!list) return;
@@ -431,19 +445,30 @@ export default function FlowPage() {
     .map((lot) => ({ ...lot, photos: lot.photos.filter((p) => photoMatchesFilter(p, filter)) }))
     .filter((lot) => lot.photos.length > 0);
 
+  function exportJSON() {
+    const blob = new Blob([JSON.stringify({ photos, lots, exportedAt: new Date().toISOString() }, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `qc-report-${new Date().toISOString().split("T")[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="page">
+      <div className="page-scroll-track">
+        <div
+          className="page-scroll-dot"
+          style={{ top: `clamp(4.5px, ${(scrollProgress * 100).toFixed(2)}%, calc(100% - 4.5px))` }}
+        />
+      </div>
 
       <section id="upload" className="section snap-section">
-        <div className="upload-grid">
-          <div className="section-left">
-            <span className="section-eyebrow" data-reveal>01 — Upload</span>
-            <h1 className="section-heading" data-reveal data-d="1">Trench documentation.<br />AI-verified.</h1>
-            <p className="section-sub" data-reveal data-d="2">Upload site photos. The system checks GPS coordinates, depth measurement, sand bedding, warning tape — and flags every non-compliant section instantly.</p>
-          </div>
+        <span className="section-eyebrow" data-reveal>01 — Upload</span>
+        <h1 className="section-heading" data-reveal data-d="1">Trench documentation.<br />AI-verified.</h1>
 
-          <div>
-          <div className="upload-card" data-reveal data-d="2">
+        <div className="upload-card" data-reveal data-d="2">
 
           {phase.kind !== "idle" && (
             <div className="upload-phases">
@@ -509,19 +534,21 @@ export default function FlowPage() {
             <input ref={folderRef} type="file" multiple onChange={(e) => pickFiles(e.target.files)} style={{ display: "none" }} {...({ webkitdirectory: "", directory: "" } as Record<string, string>)} />
             <input ref={archiveRef} type="file" accept=".zip,application/zip,application/x-zip-compressed" onChange={(e) => pickFiles(e.target.files)} style={{ display: "none" }} />
             {files.length > 0 ? (
-              <div>
+              <>
+                <svg className="drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 0 1 2-2h3.5L10 7h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg>
                 <div className="dropzone-label">{selectionSummary(mode, files)}</div>
                 <div className="dropzone-sub">Click to change selection</div>
-              </div>
+              </>
             ) : (
-              <div>
+              <>
+                <svg className="drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                 <div className="dropzone-label">{dropLabel}</div>
                 <div className="dropzone-sub">
                   {mode === "files" ? "JPEG, PNG, HEIC — GPS and overlay metadata extracted automatically" : ""}
                   {mode === "folder" ? "All image files inside the folder will be uploaded" : ""}
                   {mode === "archive" ? "ZIP containing image files" : ""}
                 </div>
-              </div>
+              </>
             )}
           </div>
 
@@ -540,11 +567,9 @@ export default function FlowPage() {
             </button>
           </div>
 
-          </div>
-          </div>
         </div>
 
-        <div>
+        <div className="upload-results">
           {uploadedPhotos.length > 0 && (
             <div className="results">
               <div className="summary">
@@ -617,37 +642,159 @@ export default function FlowPage() {
       </section>
 
       <section id="map" ref={mapSectionRef as React.RefObject<HTMLElement>} className="section snap-section">
-        <div className={`section-content${mapLocked ? " section-blurred" : ""}`}>
-            <span className="section-eyebrow" data-reveal>02 — Map</span>
-            <h2 className="section-heading" data-reveal data-d="1">Network &amp; coverage.</h2>
-            <p className="section-sub" data-reveal data-d="2">9 FCPs · 404 buildings · 19.6 km of trench. Each photo pinned to the network, colored by QC category.</p>
-          <div className="flow-map-container" data-reveal data-d="3">
-            <MapView />
-            <button className="map-expand-btn" onClick={() => setMapExpanded(true)}>
+        <span className="section-eyebrow" data-reveal>02 — Map &amp; Table</span>
+        <h2 className="section-heading" data-reveal data-d="1">Network &amp; coverage.</h2>
+
+        <div className="view-toggle" data-reveal data-d="2">
+          <button className={`view-tab${viewMode === "map" ? " active" : ""}`} onClick={() => setViewMode("map")}>Map</button>
+          <button className={`view-tab${viewMode === "table" ? " active" : ""}`} onClick={() => setViewMode("table")}>Table ({photos.length})</button>
+        </div>
+
+        {viewMode === "map" && (
+          <div className="view-panel">
+            <div className="map-filter-bar">
+              {([
+                { id: "all",    label: `All (${photos.length})` },
+                { id: "cat1",   label: "Cat 1 · Green",   cls: "cat1" },
+                { id: "cat2",   label: "Cat 2 · Yellow",  cls: "cat2" },
+                { id: "cat3",   label: "Cat 3 · Red",     cls: "cat3" },
+                { id: "cat4",   label: "Cat 4 · Suspect", cls: "cat4" },
+                { id: "no-gps", label: `No GPS (${photos.filter(p => !p.hasGps).length})` },
+              ] as { id: typeof mapCatFilter; label: string; cls?: string }[]).map((f) => (
+                <button
+                  key={f.id}
+                  className={`map-filter-chip${mapCatFilter === f.id ? ` active${f.cls ? ` ${f.cls}` : ""}` : ""}`}
+                  onClick={() => setMapCatFilter(f.id)}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <div className="flow-map-container">
+              <MapView categoryFilter={mapCatFilter} />
+              <button className="map-expand-btn" onClick={() => setMapExpanded(true)}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="15 3 21 3 21 9" />
                 <polyline points="9 21 3 21 3 15" />
                 <line x1="21" y1="3" x2="14" y2="10" />
                 <line x1="3" y1="21" x2="10" y2="14" />
               </svg>
-              Fullscreen map
+              Fullscreen
             </button>
+            </div>
           </div>
-        </div>
-        {mapLocked && (
-          <div className="lock-overlay">
-            <div className="lock-badge">Upload photos to unlock the coverage map</div>
+        )}
+
+        {viewMode === "table" && (
+          <div className="view-panel" data-reveal data-d="3">
+            <div className="filter-chips" style={{ marginBottom: 12 }}>
+              {([
+                { id: "all", label: `All (${photos.length})` },
+                { id: 1, label: "Cat 1 · Green" },
+                { id: 2, label: "Cat 2 · Yellow" },
+                { id: 3, label: "Cat 3 · Red" },
+                { id: 4, label: "Cat 4 · Suspect" },
+                { id: "no-gps", label: `No GPS (${photos.filter(p => !p.hasGps).length})` },
+                { id: "dup", label: `Duplicate (${photos.filter(p => p.analysis?.isDuplicate).length})` },
+              ] as { id: typeof tableFilter; label: string }[]).map((f) => (
+                <button key={String(f.id)} className={`filter-chip${tableFilter === f.id ? " active" : ""}`} onClick={() => setTableFilter(f.id)}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            {photos.length === 0 ? (
+              <div className="empty-state"><strong>No photos yet</strong>Upload photos in step 01 to see them here.</div>
+            ) : (
+              <div className="pt-wrap">
+                <table className="pt-table">
+                  <thead>
+                    <tr>
+                      <th></th>
+                      <th>File</th>
+                      <th>Taken</th>
+                      <th>Lot</th>
+                      <th>GPS</th>
+                      <th>Category</th>
+                      <th>Duct</th>
+                      <th>Depth</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {photos
+                      .filter((p) => {
+                        if (tableFilter === "all") return true;
+                        if (tableFilter === "no-gps") return !p.hasGps;
+                        if (tableFilter === "dup") return p.analysis?.isDuplicate === true;
+                        return deriveCategory(p) === tableFilter;
+                      })
+                      .map((p) => {
+                        const cat = deriveCategory(p);
+                        const catColors: Record<number, string> = { 1: "#16a34a", 2: "#b45309", 3: "#dc2626", 4: "#ea580c" };
+                        const catLabels: Record<number, string> = { 1: "Cat 1", 2: "Cat 2", 3: "Cat 3", 4: "Cat 4" };
+                        return (
+                          <tr key={p.id}>
+                            <td>
+                              <img src={`/api/photos/${p.id}`} alt="" className="pt-thumb" onClick={() => setPreviewId(p.id)} />
+                            </td>
+                            <td>
+                              <div className="filename">{p.originalName}</div>
+                              {p.lotId && <div className="dim">{p.project} / {p.lotId}</div>}
+                            </td>
+                            <td className="dim">{p.takenAt ? new Date(p.takenAt).toLocaleDateString("de-AT") : "—"}</td>
+                            <td className="dim">{p.lotId ?? "—"}</td>
+                            <td>
+                              {p.hasGps
+                                ? <span className="badge ok">{p.latitude?.toFixed(4)}, {p.longitude?.toFixed(4)}</span>
+                                : <span className="badge warn">No GPS</span>}
+                            </td>
+                            <td>
+                              <span className="pt-cat">
+                                <span className="pt-dot" style={{ background: catColors[cat] }} />
+                                {catLabels[cat]}
+                              </span>
+                            </td>
+                            <td>
+                              {p.analysis ? (
+                                <span className={`criterion-chip ${p.analysis.trench ? "ok" : "err"}`}>
+                                  {p.analysis.trench ? "✓" : "✗"}
+                                </span>
+                              ) : <span className="dim">—</span>}
+                            </td>
+                            <td>
+                              {p.analysis ? (
+                                <span className={`criterion-chip ${p.analysis.measuringStick ? "ok" : "err"}`}>
+                                  {p.analysis.measuringStick ? "✓" : "✗"}
+                                </span>
+                              ) : <span className="dim">—</span>}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </section>
 
       <section id="report" ref={reportSectionRef as React.RefObject<HTMLElement>} className="section snap-section">
-        <div className={`section-content${reportLocked ? " section-blurred" : ""}`}>
+        <div>
             <span className="section-eyebrow" data-reveal>03 — Report</span>
             <h2 className="section-heading" data-reveal data-d="1">Deficiency report.</h2>
-            <p className="section-sub" data-reveal data-d="2">
-              {photos.length} photos · {lots.length} lot{lots.length === 1 ? "" : "s"} · {analysedCount} analysed
-            </p>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 32, flexWrap: "wrap", gap: 12 }} data-reveal data-d="2">
+              <p className="section-sub" style={{ margin: 0 }}>
+                {photos.length} photos · {lots.length} lot{lots.length === 1 ? "" : "s"} · {analysedCount} analysed
+              </p>
+              {photos.length > 0 && (
+                <button className="export-btn" onClick={exportJSON}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  Export JSON
+                </button>
+              )}
+            </div>
             <div className="report-kpi-row" data-reveal data-d="1">
               <div className="report-kpi-card ok">
                 <div className="report-kpi-num">{totalPassAll}</div>
@@ -757,10 +904,8 @@ export default function FlowPage() {
               );
             })}
         </div>
-        {reportLocked && (
-          <div className="lock-overlay">
-            <div className="lock-badge">AI analysis results will appear here</div>
-          </div>
+        {photos.length === 0 && (
+          <div className="empty-state"><strong>No photos yet</strong>Upload photos in step 01 — results appear here automatically.</div>
         )}
       </section>
 

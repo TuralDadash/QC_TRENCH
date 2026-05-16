@@ -386,11 +386,12 @@ function MapLegend({ qcMode }: { qcMode: boolean }) {
   );
 }
 
-export default function MapView() {
+type CategoryFilter = "all" | "cat1" | "cat2" | "cat3" | "cat4" | "no-gps";
+
+export default function MapView({ categoryFilter = "all" }: { categoryFilter?: CategoryFilter }) {
   const [photos, setPhotos] = useState<PhotoRecord[]>([]);
   const [layers, setLayers] = useState<GeoLayers>({});
   const [loading, setLoading] = useState(true);
-  const [panelOpen, setPanelOpen] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [qcMode, setQcMode] = useState(true);
   const mapRef = useRef<L.Map | null>(null);
@@ -419,8 +420,15 @@ export default function MapView() {
       setLoading(false);
     }
     load();
+    const sig = (arr: PhotoRecord[]) => arr.map((p) => `${p.id}:${p.analysis ? 1 : 0}`).join(",");
     const poll = setInterval(() => {
-      fetch("/api/photos").then((r) => r.json()).then((d) => setPhotos(d.photos || [])).catch(() => {});
+      fetch("/api/photos")
+        .then((r) => r.json())
+        .then((d) => {
+          const next: PhotoRecord[] = d.photos || [];
+          setPhotos((prev) => (sig(prev) === sig(next) ? prev : next));
+        })
+        .catch(() => {});
     }, 5000);
     return () => { cancelled = true; clearInterval(poll); };
   }, []);
@@ -429,6 +437,14 @@ export default function MapView() {
     () => photos.filter((p) => p.hasGps && p.latitude != null && p.longitude != null),
     [photos],
   );
+
+  const visiblePhotos = useMemo(() => {
+    if (categoryFilter === "all") return geoPhotos;
+    if (categoryFilter === "no-gps") return photos.filter((p) => !p.hasGps && p.latitude != null && p.longitude != null);
+    const catMap: Record<string, string> = { cat1: "green", cat2: "yellow", cat3: "red", cat4: "cat4" };
+    const target = catMap[categoryFilter];
+    return geoPhotos.filter((p) => photoCategory(p) === target);
+  }, [geoPhotos, photos, categoryFilter]);
 
   const trenchStatusMap = useMemo(() => {
     const map = new Map<string, TrenchStatus>();
@@ -578,12 +594,12 @@ export default function MapView() {
             </LayersControl.Overlay>
           )}
 
-          <LayersControl.Overlay checked name={`Photos (${geoPhotos.length})`}>
+          <LayersControl.Overlay checked name={`Photos (${visiblePhotos.length})`}>
             <GeoJSON
-              key={`photos-${geoPhotos.length}`}
+              key={`photos-${visiblePhotos.length}-${categoryFilter}`}
               data={({
                 type: "FeatureCollection",
-                features: geoPhotos.map((p) => ({
+                features: visiblePhotos.map((p) => ({
                   type: "Feature",
                   properties: {
                     id: p.id,
@@ -637,55 +653,6 @@ export default function MapView() {
       />
 
       <MapLegend qcMode={qcMode} />
-
-      {photos.length > 0 && (
-        <div className="photo-panel">
-          <button className="photo-panel-toggle" onClick={() => setPanelOpen((v) => !v)}>
-            {panelOpen ? "Close" : `Photos (${photos.length})`}
-          </button>
-          {panelOpen && (
-            <div className="photo-panel-list">
-              <div className="photo-panel-header">
-                <span className="photo-panel-header-title">Photos · {photos.length}</span>
-              </div>
-              {photos.map((p) => (
-                <div
-                  key={p.id}
-                  className={`photo-panel-item ${selectedId === p.id ? "selected" : ""} ${p.hasGps ? "has-gps" : ""}`}
-                  onClick={() => { setSelectedId(p.id); flyToPhoto(p); }}
-                >
-                  <img src={`/api/photos/${p.id}`} alt="" className="photo-panel-thumb" />
-                  <div className="photo-panel-info">
-                    <div className="photo-panel-name">{p.originalName}</div>
-                    {p.takenAt && (
-                      <div className="photo-panel-meta">
-                        {new Date(p.takenAt).toLocaleString("de-AT")}
-                      </div>
-                    )}
-                    <div className="photo-panel-badges">
-                      {p.hasGps ? (
-                        <span className="ppbadge gps">GPS {formatCoords(p)}</span>
-                      ) : (
-                        <span className="ppbadge no-gps">No GPS</span>
-                      )}
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: "50%",
-                      background: markerColor(p),
-                      flexShrink: 0,
-                      marginTop: 4,
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
