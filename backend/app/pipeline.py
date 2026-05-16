@@ -149,7 +149,9 @@ def run(
 
     photos = asyncio.run(_process_async(photo_paths, assess_fn, concurrency))
 
-    # Cross-photo: duplicate clustering
+    # Cross-photo: duplicate clustering. Run pHash and metadata-only side by
+    # side so the report can compare them; pHash stays the primary that feeds
+    # classify.classify_photo (-> cat4) to preserve current behavior.
     fingerprints = [
         duplicates.PhotoFingerprint(
             id=p["id"],
@@ -157,13 +159,17 @@ def run(
             lat=p["metadata"]["gps"]["lat"] if p["metadata"]["gps"] else None,
             lon=p["metadata"]["gps"]["lon"] if p["metadata"]["gps"] else None,
             timestamp=_parse_iso(p["metadata"]["timestamp"]),
+            address=(p.get("signals", {}).get("address_label") or {}).get("text"),
         )
         for p in photos
         if p.get("phash")
     ]
-    dup_map = duplicates.find_clusters(fingerprints)
+    dup_phash = duplicates.find_clusters(fingerprints)
+    dup_meta = duplicates.find_clusters_metadata(fingerprints)
     for p in photos:
-        p["duplicate_of"] = dup_map.get(p["id"])
+        p["duplicate_of"] = dup_phash.get(p["id"])
+        p["duplicate_of_phash"] = dup_phash.get(p["id"])
+        p["duplicate_of_metadata"] = dup_meta.get(p["id"])
 
     # Geo-match
     for p in photos:

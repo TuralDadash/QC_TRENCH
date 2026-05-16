@@ -33,6 +33,7 @@ class PhotoFingerprint:
     lat: Optional[float] = None
     lon: Optional[float] = None
     timestamp: Optional[datetime] = None
+    address: Optional[str] = None  # paper-note address text, for metadata-only clustering
 
 
 def average_phash(image: Image.Image, size: int = 16) -> int:
@@ -68,6 +69,17 @@ def _time_close(p: PhotoFingerprint, q: PhotoFingerprint) -> bool:
     if p.timestamp is None or q.timestamp is None:
         return False
     return abs((p.timestamp - q.timestamp).total_seconds()) < TIME_PROX_S
+
+
+def _normalize_address(text: Optional[str]) -> str:
+    if not text:
+        return ""
+    return " ".join(text.lower().split())
+
+
+def _address_match(p: PhotoFingerprint, q: PhotoFingerprint) -> bool:
+    a, b = _normalize_address(p.address), _normalize_address(q.address)
+    return bool(a) and a == b
 
 
 def find_clusters(photos: list[PhotoFingerprint]) -> dict[str, Optional[str]]:
@@ -111,4 +123,44 @@ def find_clusters(photos: list[PhotoFingerprint]) -> dict[str, Optional[str]]:
             result[p.id] = None
         else:
             result[p.id] = photos[root].id
+    return result
+
+
+def find_clusters_metadata(photos: list[PhotoFingerprint]) -> dict[str, Optional[str]]:
+    """Metadata-only clustering. Rule:
+      1. Both have GPS within GPS_PROX_M -> duplicate.
+      2. Else both have timestamps within TIME_PROX_S AND addresses match
+         (normalized exact) -> duplicate.
+    Pixel similarity (pHash) is ignored. First photo in input order wins as root.
+    """
+    n = len(photos)
+    parent = list(range(n))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(i: int, j: int) -> None:
+        ri, rj = find(i), find(j)
+        if ri == rj:
+            return
+        if ri < rj:
+            parent[rj] = ri
+        else:
+            parent[ri] = rj
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            if _gps_close(photos[i], photos[j]):
+                union(i, j)
+                continue
+            if _time_close(photos[i], photos[j]) and _address_match(photos[i], photos[j]):
+                union(i, j)
+
+    result: dict[str, Optional[str]] = {}
+    for i, p in enumerate(photos):
+        root = find(i)
+        result[p.id] = None if root == i else photos[root].id
     return result

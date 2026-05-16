@@ -71,6 +71,7 @@ def to_json(
     ]
 
     photos_payload = [_strip_photo(p) for p in photos]
+    duplicate_comparison = _compare_clusterings(photos)
 
     return {
         "route_id": route_id,
@@ -78,6 +79,7 @@ def to_json(
         "segments": segments_payload,
         "addresses": addresses,
         "duplicate_addresses": duplicate_addresses,
+        "duplicate_comparison": duplicate_comparison,
         "aggregates": {
             "total_photos": len(photos),
             "category_counts": category_counts,
@@ -105,6 +107,8 @@ def _strip_photo(p: dict) -> dict:
         "metadata": p.get("metadata"),
         "signals": p.get("signals"),
         "duplicate_of": p.get("duplicate_of"),
+        "duplicate_of_phash": p.get("duplicate_of_phash"),
+        "duplicate_of_metadata": p.get("duplicate_of_metadata"),
         "needs_human_review": p.get("needs_human_review", False),
         "review_reasons": p.get("review_reasons", []),
         "error": p.get("error"),
@@ -138,6 +142,43 @@ def _find_duplicate_addresses(addresses: list[dict]) -> list[dict]:
 
 def _normalize_address(text: str) -> str:
     return " ".join(text.lower().split())
+
+
+def _compare_clusterings(photos: list[dict]) -> dict:
+    """Diff the pHash and metadata-only clusterings on the same photos."""
+    phash_dup = {p["id"]: p.get("duplicate_of_phash") for p in photos}
+    meta_dup = {p["id"]: p.get("duplicate_of_metadata") for p in photos}
+
+    phash_flagged = {pid for pid, parent in phash_dup.items() if parent}
+    meta_flagged = {pid for pid, parent in meta_dup.items() if parent}
+
+    agree_both = sorted(
+        pid for pid in phash_flagged & meta_flagged
+        if phash_dup[pid] == meta_dup[pid]
+    )
+    disagree_parent = sorted(
+        pid for pid in phash_flagged & meta_flagged
+        if phash_dup[pid] != meta_dup[pid]
+    )
+    phash_only = sorted(phash_flagged - meta_flagged)
+    metadata_only = sorted(meta_flagged - phash_flagged)
+
+    # Cluster Jaccard: treat each clustering as a set of unordered {id, parent}
+    # edges between a duplicate and its root. Identical clusterings -> 1.0.
+    phash_edges = {frozenset({pid, parent}) for pid, parent in phash_dup.items() if parent}
+    meta_edges = {frozenset({pid, parent}) for pid, parent in meta_dup.items() if parent}
+    union = phash_edges | meta_edges
+    jaccard = len(phash_edges & meta_edges) / len(union) if union else 1.0
+
+    return {
+        "phash_duplicate_count": len(phash_flagged),
+        "metadata_duplicate_count": len(meta_flagged),
+        "agree_both": agree_both,
+        "phash_only": phash_only,
+        "metadata_only": metadata_only,
+        "disagree_parent": disagree_parent,
+        "cluster_jaccard": round(jaccard, 4),
+    }
 
 
 def to_pdf(result: dict, path: Path) -> None:
