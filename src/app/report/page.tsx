@@ -254,8 +254,8 @@ export default function ReportPage() {
       <div className="page-bg">
         <div className="empty">
           <div className="empty-card">
-            <h2 className="empty-title">Preparing deficiency report</h2>
-            <p className="empty-text">Loading uploaded photos and analysis signals…</p>
+            <h2 className="empty-title">Loading report</h2>
+            <p className="empty-text">Fetching photos and compliance signals…</p>
           </div>
         </div>
       </div>
@@ -267,11 +267,10 @@ export default function ReportPage() {
       <div className="page-bg">
         <div className="empty">
           <div className="empty-card">
-            <h2 className="empty-title">No report data yet</h2>
+            <h2 className="empty-title">No photos yet</h2>
             <p className="empty-text">
-              Upload a photo batch first. This page will summarize lots, compliance signals,
-              duplicates, and missing evidence.{" "}
-              <Link href="/upload">Upload photos now →</Link>
+              Upload a batch first. Lots, compliance signals, duplicates, and missing evidence will appear here.{" "}
+              <Link href="/upload">Upload photos →</Link>
             </p>
           </div>
         </div>

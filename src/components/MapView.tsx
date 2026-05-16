@@ -223,7 +223,7 @@ export default function MapView() {
     mapRef.current?.flyTo([p.latitude, p.longitude], 17, { duration: 0.8 });
   }
 
-  if (loading) return <div className="empty">Loading map data…</div>;
+  if (loading) return <div className="empty">Loading…</div>;
 
   return (
     <div className="map-wrapper">

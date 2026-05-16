@@ -148,7 +148,7 @@ export default function UploadPage() {
             <div>
               <h1 className="page-title">Upload photos</h1>
               <p className="subtitle">
-                Add files, a folder, or a ZIP archive. GPS coordinates and overlay OCR are extracted automatically.
+                Files, folders, or ZIP archives. GPS and overlay data extracted automatically.
               </p>
             </div>
           </div>
