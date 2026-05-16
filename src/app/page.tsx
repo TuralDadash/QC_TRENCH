@@ -6,7 +6,6 @@ import { formatEta, useUpload, type Uploaded } from "@/context/UploadProvider";
 
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
 
-type Mode = "files" | "folder" | "archive";
 type PhaseStep = "idle" | "uploading" | "extracting" | "processing" | "complete";
 
 type PhotoAnalysis = {
@@ -18,6 +17,7 @@ type PhotoAnalysis = {
   isDuplicate: boolean;
   duplicateOf: string | null;
   gpsOnSite: boolean | null;
+  depth_cm?: number | null;
 };
 
 type Photo = {
@@ -32,6 +32,7 @@ type Photo = {
   gpsSource: "exif" | "overlay" | null;
   size: number;
   analysis: PhotoAnalysis | null;
+  overlayAddress?: string | null;
 };
 
 type Category = 1 | 2 | 3 | 4;
@@ -67,6 +68,13 @@ const CAT_CLASSES: Record<Category, string> = {
   2: "cat2",
   3: "cat3",
   4: "cat4",
+};
+
+const CAT_COLORS: Record<Category, string> = {
+  1: "#16a34a",
+  2: "#b45309",
+  3: "#dc2626",
+  4: "#ea580c",
 };
 
 function currentStep(phase: ReturnType<typeof useUpload>["phase"]): PhaseStep {
@@ -180,11 +188,17 @@ function tsLabel(src: Uploaded["timestampSource"]) {
   }
 }
 
-function selectionSummary(mode: Mode, files: File[]) {
-  if (mode === "archive") return `Archive: ${files[0].name} (${formatSize(files[0].size)})`;
-  if (mode === "folder") {
-    const rel = (files[0] as File & { webkitRelativePath?: string }).webkitRelativePath;
-    return `Folder "${rel?.split("/")[0] ?? "(unknown)"}" — ${files.length} file(s)`;
+function selectionSummary(files: File[]) {
+  if (files.length === 0) return "";
+  const isArchive =
+    files.length === 1 &&
+    (files[0].name.toLowerCase().endsWith(".zip") ||
+      files[0].type === "application/zip" ||
+      files[0].type === "application/x-zip-compressed");
+  if (isArchive) return `Archive: ${files[0].name} (${formatSize(files[0].size)})`;
+  const rel = (files[0] as File & { webkitRelativePath?: string }).webkitRelativePath;
+  if (rel && rel.includes("/")) {
+    return `Folder "${rel.split("/")[0]}" — ${files.length} file(s)`;
   }
   return `${files.length} file(s) selected`;
 }
@@ -252,18 +266,18 @@ export default function FlowPage() {
   const folderRef = useRef<HTMLInputElement>(null);
   const archiveRef = useRef<HTMLInputElement>(null);
 
-  const [mode, setMode] = useState<Mode>("files");
   const [project, setProject] = useState("");
   const [lotId, setLotId] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [tableOpen, setTableOpen] = useState(false);
 
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [viewMode, setViewMode] = useState<"map" | "table">("map");
+  const [viewMode, setViewMode] = useState<"map" | "table">("table");
   const [tableFilter, setTableFilter] = useState<"all" | 1 | 2 | 3 | 4 | "no-gps" | "dup">("all");
 
   const mapSectionRef = useRef<HTMLElement>(null);
@@ -271,7 +285,6 @@ export default function FlowPage() {
   const prevAnalysedRef = useRef(0);
   const [mapExpanded, setMapExpanded] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
-  const [mapCatFilter, setMapCatFilter] = useState<"all"|"cat1"|"cat2"|"cat3"|"cat4"|"no-gps">("all");
 
   useEffect(() => {
     if (!previewId && !mapExpanded) return;
@@ -321,18 +334,20 @@ export default function FlowPage() {
     };
   }, [photos.length, analysedCount]);
 
+  // After upload → show report section (step 02)
   useEffect(() => {
     if (phase.kind === "complete") {
       setTimeout(() => {
-        mapSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        reportSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 800);
     }
   }, [phase.kind]);
 
+  // After analysis starts → show map/coverage section (step 03)
   useEffect(() => {
     if (analysedCount > 0 && prevAnalysedRef.current === 0) {
       setTimeout(() => {
-        reportSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        mapSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 500);
     }
     prevAnalysedRef.current = analysedCount;
@@ -359,13 +374,6 @@ export default function FlowPage() {
     if (filesRef.current) filesRef.current.value = "";
     if (folderRef.current) folderRef.current.value = "";
     if (archiveRef.current) archiveRef.current.value = "";
-  }
-
-  function changeMode(next: Mode) {
-    if (next === mode) return;
-    setMode(next);
-    setFiles([]);
-    clearInputs();
   }
 
   function submit() {
@@ -419,11 +427,6 @@ export default function FlowPage() {
     noMeta: uploadedPhotos.filter((r) => !r.hasExif && !r.overlayFound).length,
   }), [uploadedPhotos]);
 
-  const dropLabel =
-    mode === "folder" ? "Click to select a folder"
-    : mode === "archive" ? "Click to select a .zip archive"
-    : "Click or drag image files here";
-
   const preview = previewId ? uploadedPhotos.find((r) => r.id === previewId) ?? null : null;
 
   const lots = buildReport(photos);
@@ -455,6 +458,17 @@ export default function FlowPage() {
     URL.revokeObjectURL(url);
   }
 
+  // Table view filter chips for the map section
+  const tableFilterChips: { id: typeof tableFilter; label: string; dot?: string }[] = [
+    { id: "all", label: `All (${photos.length})` },
+    { id: 1, label: "Cat 1", dot: CAT_COLORS[1] },
+    { id: 2, label: "Cat 2", dot: CAT_COLORS[2] },
+    { id: 3, label: "Cat 3", dot: CAT_COLORS[3] },
+    { id: 4, label: "Cat 4", dot: CAT_COLORS[4] },
+    { id: "no-gps", label: `No GPS (${photos.filter(p => !p.hasGps).length})` },
+    { id: "dup", label: `Dup (${photos.filter(p => p.analysis?.isDuplicate).length})` },
+  ];
+
   return (
     <div className="page">
       <div className="page-scroll-track">
@@ -465,9 +479,12 @@ export default function FlowPage() {
         />
       </div>
 
-      <section id="upload" className="section snap-section">
-        <span className="section-eyebrow" data-reveal>01 — Upload</span>
-        <h1 className="section-heading" data-reveal data-d="1">Trench documentation.<br />AI-verified.</h1>
+      {/* ── 01 Upload ── */}
+      <section id="upload" className="section snap-section upload-section">
+        <div className="upload-hero">
+          <span className="section-eyebrow" data-reveal>01 — Upload</span>
+          <h1 className="section-heading upload-heading" data-reveal data-d="1">Trench documentation.<br />AI-verified.</h1>
+        </div>
 
         <div className="upload-card" data-reveal data-d="2">
 
@@ -485,20 +502,6 @@ export default function FlowPage() {
             </div>
           )}
 
-          <div className="seg">
-            {(["files", "folder", "archive"] as Mode[]).map((m) => (
-              <button
-                key={m}
-                type="button"
-                className={`seg-btn ${mode === m ? "active" : ""}`}
-                onClick={() => changeMode(m)}
-                disabled={busy}
-              >
-                {m === "files" ? "Files" : m === "folder" ? "Folder" : "Archive (.zip)"}
-              </button>
-            ))}
-          </div>
-
           <div className="field-row">
             <input
               placeholder="Project name (optional)"
@@ -514,18 +517,13 @@ export default function FlowPage() {
             />
           </div>
 
+          {/* Unified dropzone — files, folder, or archive */}
           <div
             className={`dropzone ${dragOver ? "dragover" : ""} ${busy ? "disabled" : ""}`}
-            onClick={() => {
-              if (busy) return;
-              if (mode === "folder") folderRef.current?.click();
-              else if (mode === "archive") archiveRef.current?.click();
-              else filesRef.current?.click();
-            }}
-            onDragOver={(e) => { if (busy || mode !== "files") return; e.preventDefault(); setDragOver(true); }}
+            onDragOver={(e) => { if (busy) return; e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
             onDrop={(e) => {
-              if (busy || mode !== "files") return;
+              if (busy) return;
               e.preventDefault();
               setDragOver(false);
               pickFiles(e.dataTransfer.files);
@@ -534,20 +532,44 @@ export default function FlowPage() {
             <input ref={filesRef} type="file" multiple accept="image/*" onChange={(e) => pickFiles(e.target.files)} style={{ display: "none" }} />
             <input ref={folderRef} type="file" multiple onChange={(e) => pickFiles(e.target.files)} style={{ display: "none" }} {...({ webkitdirectory: "", directory: "" } as Record<string, string>)} />
             <input ref={archiveRef} type="file" accept=".zip,application/zip,application/x-zip-compressed" onChange={(e) => pickFiles(e.target.files)} style={{ display: "none" }} />
+
             {files.length > 0 ? (
               <>
                 <svg className="drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 0 1 2-2h3.5L10 7h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg>
-                <div className="dropzone-label">{selectionSummary(mode, files)}</div>
-                <div className="dropzone-sub">Click to change selection</div>
+                <div className="dropzone-label">{selectionSummary(files)}</div>
+                <button type="button" className="dropzone-change" onClick={() => filesRef.current?.click()}>
+                  Click to change selection
+                </button>
               </>
             ) : (
               <>
                 <svg className="drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                <div className="dropzone-label">{dropLabel}</div>
-                <div className="dropzone-sub">
-                  {mode === "files" ? "JPEG, PNG, HEIC — GPS and overlay metadata extracted automatically" : ""}
-                  {mode === "folder" ? "All image files inside the folder will be uploaded" : ""}
-                  {mode === "archive" ? "ZIP containing image files" : ""}
+                <div className="dropzone-label">Drag files, folder or archive here</div>
+                <div className="dropzone-sub">JPEG, PNG, HEIC — GPS and overlay metadata extracted automatically</div>
+                <div className="dropzone-actions">
+                  <button
+                    type="button"
+                    className="dropzone-action-btn"
+                    onClick={(e) => { e.stopPropagation(); filesRef.current?.click(); }}
+                  >
+                    Browse files
+                  </button>
+                  <span className="dropzone-action-sep">·</span>
+                  <button
+                    type="button"
+                    className="dropzone-action-btn"
+                    onClick={(e) => { e.stopPropagation(); folderRef.current?.click(); }}
+                  >
+                    Select folder
+                  </button>
+                  <span className="dropzone-action-sep">·</span>
+                  <button
+                    type="button"
+                    className="dropzone-action-btn"
+                    onClick={(e) => { e.stopPropagation(); archiveRef.current?.click(); }}
+                  >
+                    .zip archive
+                  </button>
                 </div>
               </>
             )}
@@ -570,135 +592,259 @@ export default function FlowPage() {
 
         </div>
 
+        {/* Upload results — collapsible table */}
         <div className="upload-results">
           {uploadedPhotos.length > 0 && (
             <div className="results">
-              <div className="summary">
-                <span><strong>{uploadSummary.total}</strong> photo{uploadSummary.total === 1 ? "" : "s"}</span>
-                <span className="ok">{uploadSummary.withGps} with GPS</span>
-                <span className={uploadSummary.noMeta > 0 ? "err" : "muted"}>{uploadSummary.noMeta} no metadata</span>
-                {skipped.length > 0 && <span className="err">{skipped.length} skipped</span>}
-                <button type="button" className="btn-ghost" onClick={doReset} disabled={resetting}>
+              <button
+                type="button"
+                className="results-toggle"
+                onClick={() => setTableOpen((v) => !v)}
+              >
+                <div className="results-toggle-info">
+                  <span><strong>{uploadSummary.total}</strong> photo{uploadSummary.total === 1 ? "" : "s"}</span>
+                  <span className="ok">{uploadSummary.withGps} with GPS</span>
+                  <span className={uploadSummary.noMeta > 0 ? "err" : "muted"}>{uploadSummary.noMeta} no metadata</span>
+                  {skipped.length > 0 && <span className="err">{skipped.length} skipped</span>}
+                </div>
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={(e) => { e.stopPropagation(); doReset(); }}
+                  disabled={resetting}
+                >
                   {resetting ? "Resetting…" : "Reset all"}
                 </button>
-              </div>
-              <table>
-                <thead>
-                  <tr>
-                    <th></th>
-                    <th>File</th>
-                    <th>GPS source</th>
-                    <th>Overlay</th>
-                    <th>Taken</th>
-                    <th>Lat</th>
-                    <th>Lon</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {uploadedPhotos.map((r) => (
-                    <tr key={r.id}>
-                      <td>
-                        <button type="button" className="thumb-btn" onClick={() => setPreviewId(r.id)}>
-                          <img src={`/api/photos/${r.id}`} alt="" className="row-thumb" />
-                        </button>
-                      </td>
-                      <td title={r.originalName}>
-                        <div className="filename">{r.originalName}</div>
-                        {r.width && r.height ? <div className="dim">{r.width}×{r.height}</div> : null}
-                      </td>
-                      <td>{renderGpsBadge(r)}</td>
-                      <td>
-                        {r.overlayApp || r.overlayDetected ? (
-                          <>
-                            <div className="dim">{r.overlayApp ?? "detected"}</div>
-                            {r.overlayAddress && <div className="filename" title={r.overlayAddress}>{r.overlayAddress}</div>}
-                          </>
-                        ) : <span className="muted">—</span>}
-                      </td>
-                      <td>
-                        {r.takenAt ? (
-                          <>
-                            <div>{new Date(r.takenAt).toLocaleString()}</div>
-                            <div className="dim">{tsLabel(r.timestampSource)}</div>
-                          </>
-                        ) : <span className="muted">—</span>}
-                      </td>
-                      <td className={r.hasGps ? "" : "muted"}>{r.latitude != null ? r.latitude.toFixed(5) : "—"}</td>
-                      <td className={r.hasGps ? "" : "muted"}>{r.longitude != null ? r.longitude.toFixed(5) : "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {skipped.length > 0 && (
-                <details className="skipped-details">
-                  <summary className="skipped-summary">Skipped ({skipped.length})</summary>
-                  <ul className="skipped-list">
-                    {skipped.map((s, i) => <li key={i}>{s.name} — {s.reason}</li>)}
-                  </ul>
-                </details>
+                <svg
+                  className={`results-chevron${tableOpen ? " open" : ""}`}
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+
+              {tableOpen && (
+                <>
+                  <table style={{ marginTop: 12 }}>
+                    <thead>
+                      <tr>
+                        <th></th>
+                        <th>File</th>
+                        <th>GPS source</th>
+                        <th>Overlay</th>
+                        <th>Taken</th>
+                        <th>Lat</th>
+                        <th>Lon</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {uploadedPhotos.map((r) => (
+                        <tr key={r.id}>
+                          <td>
+                            <button type="button" className="thumb-btn" onClick={() => setPreviewId(r.id)}>
+                              <img src={`/api/photos/${r.id}`} alt="" className="row-thumb" />
+                            </button>
+                          </td>
+                          <td title={r.originalName}>
+                            <div className="filename">{r.originalName}</div>
+                            {r.width && r.height ? <div className="dim">{r.width}×{r.height}</div> : null}
+                          </td>
+                          <td>{renderGpsBadge(r)}</td>
+                          <td>
+                            {r.overlayApp || r.overlayDetected ? (
+                              <>
+                                <div className="dim">{r.overlayApp ?? "detected"}</div>
+                                {r.overlayAddress && <div className="filename" title={r.overlayAddress}>{r.overlayAddress}</div>}
+                              </>
+                            ) : <span className="muted">—</span>}
+                          </td>
+                          <td>
+                            {r.takenAt ? (
+                              <>
+                                <div>{new Date(r.takenAt).toLocaleString()}</div>
+                                <div className="dim">{tsLabel(r.timestampSource)}</div>
+                              </>
+                            ) : <span className="muted">—</span>}
+                          </td>
+                          <td className={r.hasGps ? "" : "muted"}>{r.latitude != null ? r.latitude.toFixed(5) : "—"}</td>
+                          <td className={r.hasGps ? "" : "muted"}>{r.longitude != null ? r.longitude.toFixed(5) : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {skipped.length > 0 && (
+                    <details className="skipped-details">
+                      <summary className="skipped-summary">Skipped ({skipped.length})</summary>
+                      <ul className="skipped-list">
+                        {skipped.map((s, i) => <li key={i}>{s.name} — {s.reason}</li>)}
+                      </ul>
+                    </details>
+                  )}
+                </>
               )}
             </div>
           )}
         </div>
       </section>
 
+      {/* ── 02 Report ── */}
+      <section id="report" ref={reportSectionRef as React.RefObject<HTMLElement>} className="section snap-section">
+        <div>
+          <span className="section-eyebrow" data-reveal>02 — Report</span>
+          <h2 className="section-heading" data-reveal data-d="1">Deficiency report.</h2>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 32, flexWrap: "wrap", gap: 12 }} data-reveal data-d="2">
+            <p className="section-sub" style={{ margin: 0 }}>
+              {photos.length} photos · {lots.length} lot{lots.length === 1 ? "" : "s"} · {analysedCount} analysed
+            </p>
+            {photos.length > 0 && (
+              <button className="export-btn" onClick={exportJSON}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                Export JSON
+              </button>
+            )}
+          </div>
+          <div className="report-kpi-row" data-reveal data-d="1">
+            <div className="report-kpi-card ok">
+              <div className="report-kpi-num">{totalPassAll}</div>
+              <div className="report-kpi-label">Cat 1 · Duct + Depth</div>
+            </div>
+            <div className="report-kpi-card warn">
+              <div className="report-kpi-num">{Math.max(0, analysedCount - totalPassAll - totalFailed)}</div>
+              <div className="report-kpi-label">Cat 2 · Duct only</div>
+            </div>
+            <div className="report-kpi-card err">
+              <div className="report-kpi-num">{totalFailed}</div>
+              <div className="report-kpi-label">Cat 3/4 · Red / Suspect</div>
+            </div>
+            <div className="report-kpi-card">
+              <div className="report-kpi-num">{photos.length - analysedCount}</div>
+              <div className="report-kpi-label">Not analysed</div>
+            </div>
+          </div>
+
+          <div className="filter-chips" data-reveal data-d="2">
+            {([
+              { id: "all",       label: `All (${photos.length})`,        cls: "",      dot: null },
+              { id: "failed",    label: `Failed (${totalFailed})`,       cls: "err",   dot: null },
+              { id: "duplicate", label: `Dup (${totalDups})`,            cls: "cat4",  dot: null },
+              { id: "no-gps",    label: `No GPS (${totalNoGps})`,        cls: "warn",  dot: null },
+              { id: "cat3",      label: "Cat 3",                         cls: "err",   dot: CAT_COLORS[3] },
+              { id: "cat4",      label: "Cat 4",                         cls: "cat4",  dot: CAT_COLORS[4] },
+            ] as { id: FilterKey; label: string; cls: string; dot: string | null }[]).map((f) => (
+              <button
+                key={f.id}
+                className={`filter-chip ${filter === f.id ? `active ${f.cls}` : ""}`}
+                onClick={() => setFilter(f.id)}
+              >
+                {f.dot && <span className="filter-chip-dot" style={{ background: f.dot }} />}
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          {filteredLots.map((lot) => {
+            const key = `${lot.project}::${lot.lotId}`;
+            const isOpen = expanded.has(key);
+            const hasIssues = lot.duplicates > 0 || CRITERIA.some((c) => lot.criteria[c.key] < lot.analysed);
+            const isCat4 = lot.worstCat === 4;
+            return (
+              <div key={key} className={`lot-card ${hasIssues ? "has-issues" : ""} ${isCat4 ? "cat4" : ""}`}>
+                <div className="lot-header" onClick={() => toggleLot(key)}>
+                  <div className="lot-title">
+                    <span className="lot-project">{lot.project}</span>
+                    <span className="lot-sep">/</span>
+                    <span className="lot-id">{lot.lotId}</span>
+                    <span className={`cat-badge ${CAT_CLASSES[lot.worstCat]}`}>{CAT_LABELS[lot.worstCat]}</span>
+                  </div>
+                  <div className="lot-stats">
+                    <span className="lot-stat">{lot.total} photo{lot.total === 1 ? "" : "s"}</span>
+                    <span className={`lot-stat ${lot.withGps === lot.total ? "ok" : "warn"}`}>{lot.withGps}/{lot.total} GPS</span>
+                    {lot.analysed > 0 && (
+                      <span className={`lot-stat ${lot.passAll === lot.analysed ? "ok" : "err"}`}>{lot.passAll}/{lot.analysed} pass all</span>
+                    )}
+                    {lot.duplicates > 0 && <span className="lot-stat err">{lot.duplicates} dup</span>}
+                  </div>
+                  <div className="lot-criteria-row">
+                    {CRITERIA.map((c) => (
+                      <div key={c.key} className="lot-criterion">
+                        <StatusDot ok={lot.analysed > 0 && lot.criteria[c.key] === lot.analysed} />
+                        <span className="lot-criterion-label">{c.label}</span>
+                        {lot.analysed > 0 && (
+                          <span className="lot-criterion-pct">{pct(lot.criteria[c.key], lot.analysed)}%</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <button className="lot-toggle">{isOpen ? "-" : "+"}</button>
+                </div>
+
+                {isOpen && (
+                  <div className="lot-photos">
+                    {lot.photos.map((p) => {
+                      const cat = deriveCategory(p);
+                      const flagged = cat >= 3;
+                      return (
+                        <div key={p.id} className={`lot-photo-row ${p.analysis?.isDuplicate ? "is-duplicate" : ""}`}>
+                          <img src={`/api/photos/${p.id}`} alt="" className="lot-thumb" />
+                          <div className="lot-photo-info">
+                            <div className="lot-photo-name">{p.originalName}</div>
+                            {p.takenAt && <div className="dim">{new Date(p.takenAt).toLocaleString()}</div>}
+                            {flagged && <WhyFlagged p={p} />}
+                            {flagged && <NextActions cat={cat} />}
+                          </div>
+                          <div className="lot-photo-criteria">
+                            <span className={`cat-badge ${CAT_CLASSES[cat]}`}>{CAT_LABELS[cat]}</span>
+                            {p.analysis ? CRITERIA.map((c) => (
+                              <span key={c.key} className={`criterion-chip ${p.analysis![c.key] ? "ok" : "err"}`} title={c.label}>
+                                {c.label}
+                              </span>
+                            )) : <span className="muted">—</span>}
+                            {p.analysis?.isDuplicate && <span className="criterion-chip err">Duplicate</span>}
+                          </div>
+                          <div className="lot-photo-flags">
+                            {!p.hasGps && <span className="badge warn">No GPS</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {photos.length === 0 && (
+          <div className="empty-state"><strong>No photos yet</strong>Upload photos in step 01 — results appear here automatically.</div>
+        )}
+      </section>
+
+      {/* ── 03 Map & Coverage ── */}
       <section id="map" ref={mapSectionRef as React.RefObject<HTMLElement>} className="section snap-section">
-        <span className="section-eyebrow" data-reveal>02 — Map &amp; Table</span>
+        <span className="section-eyebrow" data-reveal>03 — Map &amp; Table</span>
         <h2 className="section-heading" data-reveal data-d="1">Network &amp; coverage.</h2>
 
         <div className="view-toggle" data-reveal data-d="2">
-          <button className={`view-tab${viewMode === "map" ? " active" : ""}`} onClick={() => setViewMode("map")}>Map</button>
           <button className={`view-tab${viewMode === "table" ? " active" : ""}`} onClick={() => setViewMode("table")}>Table ({photos.length})</button>
+          <button className={`view-tab${viewMode === "map" ? " active" : ""}`} onClick={() => setViewMode("map")}>Map</button>
         </div>
-
-        {viewMode === "map" && (
-          <div className="view-panel">
-            <div className="map-filter-bar">
-              {([
-                { id: "all",    label: `All (${photos.length})` },
-                { id: "cat1",   label: "Cat 1 · Green",   cls: "cat1" },
-                { id: "cat2",   label: "Cat 2 · Yellow",  cls: "cat2" },
-                { id: "cat3",   label: "Cat 3 · Red",     cls: "cat3" },
-                { id: "cat4",   label: "Cat 4 · Suspect", cls: "cat4" },
-                { id: "no-gps", label: `No GPS (${photos.filter(p => !p.hasGps).length})` },
-              ] as { id: typeof mapCatFilter; label: string; cls?: string }[]).map((f) => (
-                <button
-                  key={f.id}
-                  className={`map-filter-chip${mapCatFilter === f.id ? ` active${f.cls ? ` ${f.cls}` : ""}` : ""}`}
-                  onClick={() => setMapCatFilter(f.id)}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-            <div className="flow-map-container">
-              <MapView categoryFilter={mapCatFilter} />
-              <button className="map-expand-btn" onClick={() => setMapExpanded(true)}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="15 3 21 3 21 9" />
-                <polyline points="9 21 3 21 3 15" />
-                <line x1="21" y1="3" x2="14" y2="10" />
-                <line x1="3" y1="21" x2="10" y2="14" />
-              </svg>
-              Fullscreen
-            </button>
-            </div>
-          </div>
-        )}
 
         {viewMode === "table" && (
           <div className="view-panel" data-reveal data-d="3">
             <div className="filter-chips" style={{ marginBottom: 12 }}>
-              {([
-                { id: "all", label: `All (${photos.length})` },
-                { id: 1, label: "Cat 1 · Green" },
-                { id: 2, label: "Cat 2 · Yellow" },
-                { id: 3, label: "Cat 3 · Red" },
-                { id: 4, label: "Cat 4 · Suspect" },
-                { id: "no-gps", label: `No GPS (${photos.filter(p => !p.hasGps).length})` },
-                { id: "dup", label: `Duplicate (${photos.filter(p => p.analysis?.isDuplicate).length})` },
-              ] as { id: typeof tableFilter; label: string }[]).map((f) => (
-                <button key={String(f.id)} className={`filter-chip${tableFilter === f.id ? " active" : ""}`} onClick={() => setTableFilter(f.id)}>
+              {tableFilterChips.map((f) => (
+                <button
+                  key={String(f.id)}
+                  className={`filter-chip${tableFilter === f.id ? " active" : ""}`}
+                  onClick={() => setTableFilter(f.id)}
+                >
+                  {f.dot && <span className="filter-chip-dot" style={{ background: f.dot }} />}
                   {f.label}
                 </button>
               ))}
@@ -730,8 +876,6 @@ export default function FlowPage() {
                       })
                       .map((p) => {
                         const cat = deriveCategory(p);
-                        const catColors: Record<number, string> = { 1: "#16a34a", 2: "#b45309", 3: "#dc2626", 4: "#ea580c" };
-                        const catLabels: Record<number, string> = { 1: "Cat 1", 2: "Cat 2", 3: "Cat 3", 4: "Cat 4" };
                         return (
                           <tr key={p.id}>
                             <td>
@@ -750,8 +894,8 @@ export default function FlowPage() {
                             </td>
                             <td>
                               <span className="pt-cat">
-                                <span className="pt-dot" style={{ background: catColors[cat] }} />
-                                {catLabels[cat]}
+                                <span className="pt-dot" style={{ background: CAT_COLORS[cat] }} />
+                                Cat {cat}
                               </span>
                             </td>
                             <td>
@@ -763,9 +907,11 @@ export default function FlowPage() {
                             </td>
                             <td>
                               {p.analysis ? (
-                                <span className={`criterion-chip ${p.analysis.measuringStick ? "ok" : "err"}`}>
-                                  {p.analysis.measuringStick ? "✓" : "✗"}
-                                </span>
+                                p.analysis.depth_cm != null
+                                  ? <span className="dim">{p.analysis.depth_cm} cm</span>
+                                  : <span className={`criterion-chip ${p.analysis.measuringStick ? "ok" : "err"}`}>
+                                      {p.analysis.measuringStick ? "✓" : "✗"}
+                                    </span>
                               ) : <span className="dim">—</span>}
                             </td>
                           </tr>
@@ -777,136 +923,22 @@ export default function FlowPage() {
             )}
           </div>
         )}
-      </section>
 
-      <section id="report" ref={reportSectionRef as React.RefObject<HTMLElement>} className="section snap-section">
-        <div>
-            <span className="section-eyebrow" data-reveal>03 — Report</span>
-            <h2 className="section-heading" data-reveal data-d="1">Deficiency report.</h2>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 32, flexWrap: "wrap", gap: 12 }} data-reveal data-d="2">
-              <p className="section-sub" style={{ margin: 0 }}>
-                {photos.length} photos · {lots.length} lot{lots.length === 1 ? "" : "s"} · {analysedCount} analysed
-              </p>
-              {photos.length > 0 && (
-                <button className="export-btn" onClick={exportJSON}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                  </svg>
-                  Export JSON
-                </button>
-              )}
+        {viewMode === "map" && (
+          <div className="view-panel">
+            <div className="flow-map-container">
+              <MapView />
+              <button className="map-expand-btn" onClick={() => setMapExpanded(true)}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="15 3 21 3 21 9" />
+                  <polyline points="9 21 3 21 3 15" />
+                  <line x1="21" y1="3" x2="14" y2="10" />
+                  <line x1="3" y1="21" x2="10" y2="14" />
+                </svg>
+                Fullscreen
+              </button>
             </div>
-            <div className="report-kpi-row" data-reveal data-d="1">
-              <div className="report-kpi-card ok">
-                <div className="report-kpi-num">{totalPassAll}</div>
-                <div className="report-kpi-label">Cat 1 · Duct + Depth</div>
-              </div>
-              <div className="report-kpi-card warn">
-                <div className="report-kpi-num">{Math.max(0, analysedCount - totalPassAll - totalFailed)}</div>
-                <div className="report-kpi-label">Cat 2 · Duct only</div>
-              </div>
-              <div className="report-kpi-card err">
-                <div className="report-kpi-num">{totalFailed}</div>
-                <div className="report-kpi-label">Cat 3/4 · Red / Suspect</div>
-              </div>
-              <div className="report-kpi-card">
-                <div className="report-kpi-num">{photos.length - analysedCount}</div>
-                <div className="report-kpi-label">Not analysed</div>
-              </div>
-            </div>
-
-            <div className="filter-chips" data-reveal data-d="2">
-              {([
-                { id: "all", label: `All (${photos.length})`, cls: "" },
-                { id: "failed", label: `Failed (${totalFailed})`, cls: "err" },
-                { id: "duplicate", label: `Duplicate (${totalDups})`, cls: "cat4" },
-                { id: "no-gps", label: `No GPS (${totalNoGps})`, cls: "warn" },
-                { id: "cat3", label: "Cat 3 · Critical", cls: "err" },
-                { id: "cat4", label: "Cat 4 · Suspect", cls: "cat4" },
-              ] as { id: FilterKey; label: string; cls: string }[]).map((f) => (
-                <button
-                  key={f.id}
-                  className={`filter-chip ${filter === f.id ? `active ${f.cls}` : ""}`}
-                  onClick={() => setFilter(f.id)}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-
-            {filteredLots.map((lot) => {
-              const key = `${lot.project}::${lot.lotId}`;
-              const isOpen = expanded.has(key);
-              const hasIssues = lot.duplicates > 0 || CRITERIA.some((c) => lot.criteria[c.key] < lot.analysed);
-              const isCat4 = lot.worstCat === 4;
-              return (
-                <div key={key} className={`lot-card ${hasIssues ? "has-issues" : ""} ${isCat4 ? "cat4" : ""}`}>
-                  <div className="lot-header" onClick={() => toggleLot(key)}>
-                    <div className="lot-title">
-                      <span className="lot-project">{lot.project}</span>
-                      <span className="lot-sep">/</span>
-                      <span className="lot-id">{lot.lotId}</span>
-                      <span className={`cat-badge ${CAT_CLASSES[lot.worstCat]}`}>{CAT_LABELS[lot.worstCat]}</span>
-                    </div>
-                    <div className="lot-stats">
-                      <span className="lot-stat">{lot.total} photo{lot.total === 1 ? "" : "s"}</span>
-                      <span className={`lot-stat ${lot.withGps === lot.total ? "ok" : "warn"}`}>{lot.withGps}/{lot.total} GPS</span>
-                      {lot.analysed > 0 && (
-                        <span className={`lot-stat ${lot.passAll === lot.analysed ? "ok" : "err"}`}>{lot.passAll}/{lot.analysed} pass all</span>
-                      )}
-                      {lot.duplicates > 0 && <span className="lot-stat err">{lot.duplicates} dup</span>}
-                    </div>
-                    <div className="lot-criteria-row">
-                      {CRITERIA.map((c) => (
-                        <div key={c.key} className="lot-criterion">
-                          <StatusDot ok={lot.analysed > 0 && lot.criteria[c.key] === lot.analysed} />
-                          <span className="lot-criterion-label">{c.label}</span>
-                          {lot.analysed > 0 && (
-                            <span className="lot-criterion-pct">{pct(lot.criteria[c.key], lot.analysed)}%</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                    <button className="lot-toggle">{isOpen ? "-" : "+"}</button>
-                  </div>
-
-                  {isOpen && (
-                    <div className="lot-photos">
-                      {lot.photos.map((p) => {
-                        const cat = deriveCategory(p);
-                        const flagged = cat >= 3;
-                        return (
-                          <div key={p.id} className={`lot-photo-row ${p.analysis?.isDuplicate ? "is-duplicate" : ""}`}>
-                            <img src={`/api/photos/${p.id}`} alt="" className="lot-thumb" />
-                            <div className="lot-photo-info">
-                              <div className="lot-photo-name">{p.originalName}</div>
-                              {p.takenAt && <div className="dim">{new Date(p.takenAt).toLocaleString()}</div>}
-                              {flagged && <WhyFlagged p={p} />}
-                              {flagged && <NextActions cat={cat} />}
-                            </div>
-                            <div className="lot-photo-criteria">
-                              <span className={`cat-badge ${CAT_CLASSES[cat]}`}>{CAT_LABELS[cat]}</span>
-                              {p.analysis ? CRITERIA.map((c) => (
-                                <span key={c.key} className={`criterion-chip ${p.analysis![c.key] ? "ok" : "err"}`} title={c.label}>
-                                  {c.label}
-                                </span>
-                              )) : <span className="muted">—</span>}
-                              {p.analysis?.isDuplicate && <span className="criterion-chip err">Duplicate</span>}
-                            </div>
-                            <div className="lot-photo-flags">
-                              {!p.hasGps && <span className="badge warn">No GPS</span>}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-        </div>
-        {photos.length === 0 && (
-          <div className="empty-state"><strong>No photos yet</strong>Upload photos in step 01 — results appear here automatically.</div>
+          </div>
         )}
       </section>
 

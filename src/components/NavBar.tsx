@@ -5,8 +5,8 @@ import UploadStatusBadge from "@/components/UploadStatusBadge";
 
 const STEPS = [
   { id: "upload", num: "01", label: "Upload" },
-  { id: "map",    num: "02", label: "Map" },
-  { id: "report", num: "03", label: "Report" },
+  { id: "report", num: "02", label: "Report" },
+  { id: "map",    num: "03", label: "Map" },
 ];
 
 export default function NavBar() {

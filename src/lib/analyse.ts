@@ -17,6 +17,7 @@ Criteria:
 - has_side_view: the trench is photographed from the side so its cross-section, walls, and depth are clearly visible — not a top-down or oblique overhead shot.
 - has_address_sheet: a printed or hand-written sheet of paper listing street addresses. A sign, equipment label, or phone screen does not count.
 - addresses: every street address on the sheet, transcribed exactly as written. Empty array if none legible.
+- depth_cm: if a measuring stick is visible and markings are legible, read the depth of the trench in centimetres. Return null if not determinable.
 
 For every boolean also return confidence 0–100. When in doubt answer false with low confidence.
 
@@ -27,7 +28,7 @@ has_sand_bedding, has_sand_bedding_confidence,
 has_warning_tape, has_warning_tape_confidence,
 has_side_view, has_side_view_confidence,
 has_address_sheet, has_address_sheet_confidence,
-addresses`;
+addresses, depth_cm`;
 
 type RawResult = {
   has_trench: boolean;
@@ -43,6 +44,7 @@ type RawResult = {
   has_address_sheet: boolean;
   has_address_sheet_confidence: number;
   addresses: string[];
+  depth_cm: number | null;
 };
 
 export async function analyseImage(
@@ -67,6 +69,7 @@ export async function analyseImage(
       isDuplicate,
       duplicateOf,
       gpsOnSite: null,
+      depth_cm: null,
       model: "none",
       analysedAt: new Date().toISOString(),
     };
@@ -106,6 +109,7 @@ export async function analyseImage(
     isDuplicate,
     duplicateOf,
     gpsOnSite: null,
+    depth_cm: raw.depth_cm ?? null,
     model: MODEL,
     analysedAt: new Date().toISOString(),
   };

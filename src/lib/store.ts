@@ -18,6 +18,7 @@ export type PhotoAnalysis = {
   isDuplicate: boolean;
   duplicateOf: string | null;
   gpsOnSite: boolean | null;
+  depth_cm?: number | null;
   model: string;
   analysedAt: string;
 };
