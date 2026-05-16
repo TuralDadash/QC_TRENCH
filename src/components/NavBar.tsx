@@ -36,27 +36,27 @@ export default function NavBar() {
   }
 
   return (
-    <header className="topnav">
-      <div className="topnav-brand">
+    <>
+      <div className="wordmark">
         <span className="brand-mark" />
         <span className="brand-name">öGIG QC</span>
+        <div className="wordmark-badge">
+          <UploadStatusBadge />
+        </div>
       </div>
 
-      <nav className="topnav-items">
+      <nav className="side-dots">
         {ITEMS.map((item) => (
           <button
             key={item.id}
-            className={`topnav-item ${active === item.id ? "active" : ""}`}
+            className={`side-dot ${active === item.id ? "active" : ""}`}
             onClick={() => scrollTo(item.id)}
+            aria-label={item.label}
           >
-            {item.label}
+            <span className="side-dot-label">{item.label}</span>
           </button>
         ))}
       </nav>
-
-      <div className="topnav-end">
-        <UploadStatusBadge />
-      </div>
-    </header>
+    </>
   );
 }
