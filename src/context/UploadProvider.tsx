@@ -31,6 +31,54 @@ export type GeminiAnalysis = {
   datetime: string | null;
 };
 
+// Shape returned by the "backend" (alternative) path — mirrors PhotoAssessment
+// in backend/app/vlm.py.
+export type BackendAssessment = {
+  is_construction_photo: boolean;
+  is_construction_photo_confidence: number;
+  is_likely_ai_generated: boolean;
+  is_likely_ai_generated_confidence: number;
+  overall_confidence: number;
+  duct: { visible: boolean; confidence: number; notes: string };
+  depth: {
+    ruler_visible: boolean;
+    depth_value_cm: number | null;
+    depth_range_cm: number[] | null;
+    uncertain: boolean;
+    confidence: number;
+    notes: string;
+  };
+  sand_bedding: { status: "sand" | "uncertain" | "not_sand"; confidence: number };
+  burnt_in_metadata: {
+    gps_lat: number | null;
+    gps_lon: number | null;
+    timestamp_iso: string | null;
+    raw_text: string;
+    confidence: number;
+  };
+  address_label: { found: boolean; text: string | null; confidence: number };
+  privacy_flags: { faces_visible: boolean; license_plates_visible: boolean };
+  pipe_end_seals: {
+    status: "sealed" | "unsealed" | "not_visible";
+    confidence: number;
+  };
+};
+
+export type AnalysisRun = {
+  pathId: string;
+  kind: "util" | "backend";
+  analyzedAt: string | null;
+  error: string | null;
+  result: GeminiAnalysis | BackendAssessment | null;
+};
+
+// A selectable analysis path for the Process dropdown.
+export type AnalysisPath = {
+  id: string;
+  label: string;
+  kind: "util" | "backend";
+};
+
 export type Uploaded = {
   id: string;
   filename: string;
@@ -64,9 +112,8 @@ export type Uploaded = {
   overlayTakenAt: string | null;
   overlayFound: boolean;
   overlayDetected: boolean;
-  analysis?: GeminiAnalysis | null;
-  analyzedAt?: string | null;
-  analysisError?: string | null;
+  // Analysis runs keyed by path id; a photo can be analysed by several paths.
+  analyses?: Record<string, AnalysisRun>;
 };
 
 export type Skipped = { name: string; reason: string };
@@ -114,20 +161,27 @@ type StreamEvent =
   | { event: "error"; message: string };
 
 type ProcessEvent =
-  | { event: "start"; total: number }
-  | { event: "analyzed"; done: number; total: number; record: Uploaded }
-  | { event: "done" };
+  | { event: "start"; pathId: string; total: number }
+  | {
+      event: "analyzed";
+      pathId: string;
+      done: number;
+      total: number;
+      record: Uploaded;
+    }
+  | { event: "done"; pathId: string };
 
 type ContextValue = {
   phase: UploadPhase;
   results: Uploaded[];
   skipped: Skipped[];
   processPhase: ProcessPhase;
+  availablePaths: AnalysisPath[];
   startUpload: (
     files: File[],
     opts: { project?: string; lotId?: string; limit?: number | null },
   ) => void;
-  startProcess: () => void;
+  startProcess: (pathId: string) => void;
   resetAll: () => Promise<void>;
   refresh: () => Promise<void>;
 };
@@ -141,6 +195,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
   const [processPhase, setProcessPhase] = useState<ProcessPhase>({
     kind: "idle",
   });
+  const [availablePaths, setAvailablePaths] = useState<AnalysisPath[]>([]);
   const xhrRef = useRef<XMLHttpRequest | null>(null);
   const processXhrRef = useRef<XMLHttpRequest | null>(null);
 
@@ -157,6 +212,33 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Load the analysis paths: one per util/prompts file, plus the backend.
+  useEffect(() => {
+    (async () => {
+      const backend: AnalysisPath = {
+        id: "backend",
+        label: "Alternative (backend)",
+        kind: "backend",
+      };
+      try {
+        const r = await fetch("/api/prompts");
+        const d = await r.json();
+        const prompts: string[] = d.prompts || [];
+        const utilPaths: AnalysisPath[] = prompts.map((p) => ({
+          id: `util:${p}`,
+          label: `Gemini · ${p}`,
+          kind: "util",
+        }));
+        setAvailablePaths([...utilPaths, backend]);
+      } catch {
+        setAvailablePaths([
+          { id: "util:v1.txt", label: "Gemini · v1.txt", kind: "util" },
+          backend,
+        ]);
+      }
+    })();
+  }, []);
 
   const resetAll = useCallback(async () => {
     await fetch("/api/photos", { method: "DELETE" });
@@ -309,7 +391,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  const startProcess = useCallback(() => {
+  const startProcess = useCallback((pathId: string) => {
     // Don't start a second analysis run while one is in-flight.
     if (processXhrRef.current) return;
 
@@ -378,7 +460,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    xhr.open("POST", "/api/process");
+    xhr.open("POST", `/api/process?path=${encodeURIComponent(pathId)}`);
     xhr.addEventListener("progress", drain);
     xhr.addEventListener("load", () => {
       drain();
@@ -409,6 +491,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       results,
       skipped,
       processPhase,
+      availablePaths,
       startUpload,
       startProcess,
       resetAll,
@@ -419,6 +502,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       results,
       skipped,
       processPhase,
+      availablePaths,
       startUpload,
       startProcess,
       resetAll,
