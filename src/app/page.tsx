@@ -433,7 +433,18 @@ export default function FlowPage() {
     .filter((lot) => lot.photos.length > 0);
 
   return (
+<<<<<<< HEAD
     <div className="flow-page">
+=======
+    <div className="page">
+      <div className="page-scroll-track">
+        <div className="page-scroll-fill" style={{ height: `calc(clamp(0%, ${(scrollProgress * 100).toFixed(2)}%, 100%) - 6px)` }} />
+        <div
+          className="page-scroll-dot"
+          style={{ top: `clamp(4.5px, ${(scrollProgress * 100).toFixed(2)}%, calc(100% - 4.5px))` }}
+        />
+      </div>
+>>>>>>> 7c20918 (fix: blue scroll line with fill, compact FCP pin labels, reduce map polygon opacity)
 
       <section id="upload" className="flow-section">
         <div className="upload-layout">

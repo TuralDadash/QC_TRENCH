@@ -121,7 +121,7 @@ function propsTable(props: GeoJsonProperties, keys: string[]) {
 
 function fcpPolygonStyle(feature?: Feature<Geometry, GeoJsonProperties>): PathOptions {
   const color = (feature?.properties?.fillColor as string | undefined) ?? "#1e3a8a";
-  return { color, weight: 1.5, fillColor: color, fillOpacity: 0.08, opacity: 0.45 };
+  return { color, weight: 1, fillColor: color, fillOpacity: 0.04, opacity: 0.25 };
 }
 
 const clusterStyle: PathOptions = {
@@ -154,25 +154,27 @@ function markerCategory(p: PhotoRecord): string {
 }
 
 function makeFcpIcon(name: string) {
+  const label = name.replace(/\s+/g, "\u00A0");
   return L.divIcon({
     className: "",
-    html: `<div style="
-      width:44px;height:44px;
-      background:#1e3a8a;
-      border:2.5px solid rgba(255,255,255,0.95);
-      border-radius:8px;
-      display:flex;flex-direction:column;
-      align-items:center;justify-content:center;
-      font-family:'Space Grotesk',system-ui,sans-serif;
-      box-shadow:0 4px 20px rgba(30,58,138,0.45),0 2px 8px rgba(0,0,0,0.3);
-      gap:1px;
-    ">
-      <div style="font-size:6px;font-weight:700;color:rgba(255,255,255,0.65);letter-spacing:0.12em;line-height:1;text-transform:uppercase">FCP</div>
-      <div style="font-size:13px;font-weight:700;color:white;line-height:1;letter-spacing:-0.02em">${name}</div>
+    html: `<div style="display:flex;flex-direction:column;align-items:center;line-height:1">
+      <div style="
+        background:#1d4ed8;
+        color:white;
+        font-family:'Space Grotesk',system-ui,sans-serif;
+        font-size:10px;
+        font-weight:600;
+        padding:3px 8px;
+        border-radius:4px;
+        box-shadow:0 1px 5px rgba(0,0,0,0.25);
+        white-space:nowrap;
+        letter-spacing:0.01em;
+      ">${label}</div>
+      <div style="width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid #1d4ed8;margin-top:-1px"></div>
     </div>`,
-    iconSize: [44, 44],
-    iconAnchor: [22, 22],
-    popupAnchor: [0, -26],
+    iconSize: [80, 28],
+    iconAnchor: [40, 28],
+    popupAnchor: [0, -30],
   });
 }
 
