@@ -25,6 +25,13 @@ Definitions:
 - sand bedding: fine light-colored sand layer around the duct. Distinguish from
   dark soil. Yellow warning tape, plastic foil, or rocks are NOT sand. Shadows can
   make sand look darker — if ambiguous, use status="uncertain".
+- warning tape: a yellow (sometimes red or orange) plastic ribbon laid horizontally
+  along the trench above the duct/cable, used to warn future excavators of buried
+  fiber infrastructure. Often printed with text like "Achtung Kabel" / "Glasfaser"
+  / "Kabel darunter" or just a continuous yellow band running along the trench.
+  Set has_warning_tape=true when such a ribbon is clearly visible in the trench.
+  A plain yellow object that is not a ribbon (helmet, vest, machinery part) is
+  NOT warning tape. Set has_warning_tape_confidence in [0.0, 1.0].
 - burnt_in_metadata: many photos have white text overlaid at the bottom/edge with
   GPS coordinates and timestamp. This is software-added overlay, not part of the
   physical scene. Extract the lat/lon and timestamp. raw_text is the literal

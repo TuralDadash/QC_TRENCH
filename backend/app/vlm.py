@@ -63,6 +63,8 @@ class PhotoAssessment(BaseModel):
     duct: DuctSignal = Field(default_factory=DuctSignal)
     depth: DepthSignal = Field(default_factory=DepthSignal)
     sand_bedding: SandBeddingSignal = Field(default_factory=SandBeddingSignal)
+    has_warning_tape: bool = False
+    has_warning_tape_confidence: float = 0.0
     burnt_in_metadata: BurntInMetadata = Field(default_factory=BurntInMetadata)
     address_label: AddressLabel = Field(default_factory=AddressLabel)
 
