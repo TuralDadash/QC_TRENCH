@@ -8,6 +8,7 @@ import {
   type AnalysisRun,
   type BackendAssessment,
   type GeminiAnalysis,
+  type PhotoCategory,
   type Uploaded,
 } from "@/context/UploadProvider";
 
@@ -430,6 +431,7 @@ export default function UploadPage() {
                 <th>Metadata</th>
                 <th>Overlay</th>
                 <th>Analysis</th>
+                <th>Kategorie</th>
                 <th>Taken</th>
                 <th>Latitude</th>
                 <th>Longitude</th>
@@ -501,6 +503,7 @@ export default function UploadPage() {
                       )}
                     </td>
                     <td>{renderAnalysis(run)}</td>
+                    <td>{renderCategoryBadge(run)}</td>
                     <td>
                       {r.takenAt ? (
                         <>
@@ -684,6 +687,58 @@ function flagBadge(label: string, on: boolean, title: string) {
   return (
     <span className={`badge ${on ? "ok" : "off"}`} title={title}>
       {label}
+    </span>
+  );
+}
+
+// --- Category cell ------------------------------------------------------
+
+// Mirrors backend/app/classify.py for the Gemini util path. Gemini
+// confidences are 0–100; classify.py's 0.4 threshold becomes 40 here.
+const UTIL_VISIBLE_CONF_THRESHOLD = 40;
+
+function categoryFromGemini(a: GeminiAnalysis): PhotoCategory {
+  const ductOk =
+    a.has_trench && a.has_trench_confidence >= UTIL_VISIBLE_CONF_THRESHOLD;
+  const depthOk =
+    a.has_vertical_measuring_stick &&
+    a.has_vertical_measuring_stick_confidence >= UTIL_VISIBLE_CONF_THRESHOLD;
+  if (ductOk && depthOk) return "green";
+  if (ductOk) return "yellow";
+  if (depthOk) return "red";
+  return "cat4";
+}
+
+function categoryFromRun(
+  run: AnalysisRun,
+): { category: PhotoCategory; reason: string | null } | null {
+  if (!run.result) return null;
+  if (run.kind === "backend") {
+    const a = run.result as BackendAssessment;
+    if (!a.category) return null;
+    return { category: a.category, reason: a.reason ?? null };
+  }
+  const a = run.result as GeminiAnalysis;
+  return { category: categoryFromGemini(a), reason: null };
+}
+
+const CATEGORY_BADGE_CLASS: Record<PhotoCategory, string> = {
+  green: "ok",
+  yellow: "warn",
+  red: "err",
+  cat4: "off",
+};
+
+function renderCategoryBadge(run: AnalysisRun | null) {
+  if (!run) return <span className="muted">—</span>;
+  const c = categoryFromRun(run);
+  if (!c) return <span className="muted">—</span>;
+  return (
+    <span
+      className={`badge ${CATEGORY_BADGE_CLASS[c.category]}`}
+      title={c.reason ?? undefined}
+    >
+      {c.category}
     </span>
   );
 }
@@ -913,24 +968,28 @@ function renderBackendDetail(a: BackendAssessment) {
           </span>
         </span>
       </div>
-      {row(
-        "AI-generated suspicion",
-        a.is_likely_ai_generated,
-        a.is_likely_ai_generated_confidence,
-      )}
-      <div className="modal-row">
-        <span
-          className={`badge ${a.pipe_end_seals.status === "sealed" ? "ok" : "off"}`}
-        >
-          {a.pipe_end_seals.status}
-        </span>
-        <span>
-          Pipe end seals{" "}
-          <span className="dim">
-            ({pct(a.pipe_end_seals.confidence)} confidence)
+      {a.is_likely_ai_generated !== undefined
+        ? row(
+            "AI-generated suspicion",
+            a.is_likely_ai_generated,
+            a.is_likely_ai_generated_confidence ?? 0,
+          )
+        : null}
+      {a.pipe_end_seals ? (
+        <div className="modal-row">
+          <span
+            className={`badge ${a.pipe_end_seals.status === "sealed" ? "ok" : "off"}`}
+          >
+            {a.pipe_end_seals.status}
           </span>
-        </span>
-      </div>
+          <span>
+            Pipe end seals{" "}
+            <span className="dim">
+              ({pct(a.pipe_end_seals.confidence)} confidence)
+            </span>
+          </span>
+        </div>
+      ) : null}
       {a.address_label.found && a.address_label.text ? (
         <div>
           <strong>Address label:</strong> {a.address_label.text}
@@ -953,8 +1012,9 @@ function renderBackendDetail(a: BackendAssessment) {
           {m.raw_text ? <div className="dim">{m.raw_text}</div> : null}
         </div>
       ) : null}
-      {a.privacy_flags.faces_visible ||
-      a.privacy_flags.license_plates_visible ? (
+      {a.privacy_flags &&
+      (a.privacy_flags.faces_visible ||
+        a.privacy_flags.license_plates_visible) ? (
         <div className="dim">
           Privacy:{" "}
           {[
