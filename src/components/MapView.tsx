@@ -120,7 +120,7 @@ function propsTable(props: GeoJsonProperties, keys: string[]) {
 }
 
 function fcpPolygonStyle(feature?: Feature<Geometry, GeoJsonProperties>): PathOptions {
-  const color = (feature?.properties?.fillColor as string | undefined) ?? "#7c3aed";
+  const color = (feature?.properties?.fillColor as string | undefined) ?? "#1e3a8a";
   return { color, weight: 1.5, fillColor: color, fillOpacity: 0.08, opacity: 0.45 };
 }
 
@@ -158,16 +158,16 @@ function makeFcpIcon(name: string) {
     className: "",
     html: `<div style="
       width:44px;height:44px;
-      background:#7c3aed;
+      background:#1e3a8a;
       border:2.5px solid rgba(255,255,255,0.95);
       border-radius:8px;
       display:flex;flex-direction:column;
       align-items:center;justify-content:center;
       font-family:'Space Grotesk',system-ui,sans-serif;
-      box-shadow:0 4px 20px rgba(124,58,237,0.4),0 2px 8px rgba(0,0,0,0.3);
+      box-shadow:0 4px 20px rgba(30,58,138,0.45),0 2px 8px rgba(0,0,0,0.3);
       gap:1px;
     ">
-      <div style="font-size:6px;font-weight:700;color:rgba(255,255,255,0.7);letter-spacing:0.12em;line-height:1;text-transform:uppercase">FCP</div>
+      <div style="font-size:6px;font-weight:700;color:rgba(255,255,255,0.65);letter-spacing:0.12em;line-height:1;text-transform:uppercase">FCP</div>
       <div style="font-size:13px;font-weight:700;color:white;line-height:1;letter-spacing:-0.02em">${name}</div>
     </div>`,
     iconSize: [44, 44],
@@ -372,7 +372,7 @@ function MapLegend({ qcMode }: { qcMode: boolean }) {
       )}
       <div className="mlp-divider" />
       <div className="mlp-row">
-        <span style={{ width: 16, height: 16, background: "#7c3aed", borderRadius: 3, display: "inline-block", flexShrink: 0 }} />
+        <span style={{ width: 16, height: 16, background: "#1e3a8a", borderRadius: 3, display: "inline-block", flexShrink: 0 }} />
         <span className="mlp-label">FCP · distribution hub</span>
       </div>
     </div>
