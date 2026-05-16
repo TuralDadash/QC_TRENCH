@@ -54,6 +54,10 @@ def load_trenches(path: str | Path) -> list[Segment]:
     return list(_iter_segments(data))
 
 
+def total_route_length_m(path: str | Path) -> float:
+    return sum(seg.length_m for seg in load_trenches(path))
+
+
 def _iter_segments(geojson: dict) -> Iterable[Segment]:
     features = geojson.get("features", [])
     for i, feat in enumerate(features):

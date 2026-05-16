@@ -4,14 +4,40 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional
 
+from dotenv import load_dotenv
 from fastapi import Body, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+# Load backend/.env before importing modules that read env at import time
+# (e.g. vlm.DEFAULT_MODEL). dotenv leaves pre-existing env vars untouched,
+# so docker / shell exports still win.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
 from app.pipeline import run as run_pipeline
+from app.geo import total_route_length_m
 from app import db as report_db
 from app import report as report_mod
+
+# Trench GeoJSON shipped with the repo (also used by the frontend map).
+# Total length is constant per project so we cache it after first read.
+_TRENCH_GEOJSON = (
+    Path(__file__).resolve().parent.parent.parent
+    / "public/geojson/CLP20417A-P1-B00_Trenches.geojson"
+)
+_route_length_cache: float | None = None
+
+
+def _default_route_length_m() -> float | None:
+    global _route_length_cache
+    if _route_length_cache is not None:
+        return _route_length_cache
+    try:
+        _route_length_cache = total_route_length_m(_TRENCH_GEOJSON)
+    except Exception:
+        return None
+    return _route_length_cache
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
@@ -103,6 +129,8 @@ def generate_pdf_report(payload: dict = Body(default={})) -> FileResponse:
     project = payload.get("project")
     meta = {**MOCK_META_DEFAULTS, **(payload.get("meta") or {})}
     length_m = payload.get("length_m")
+    if length_m is None:
+        length_m = _default_route_length_m()
     cat4_overrides = payload.get("cat4_breakdown") or {}
 
     try:

@@ -6,6 +6,7 @@ Word doc; the per-photo appendix lives in `app.pdf_appendix`.
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
     HRFlowable,
+    Image,
     PageTemplate,
     Paragraph,
     Spacer,
@@ -129,13 +131,10 @@ def _hr(weight: float = 1.0, color=NAVY) -> HRFlowable:
 
 
 def _header(meta: dict, styles: dict) -> list:
-    company = meta.get("company_name") or "Ohsome Compliance"
+    company = meta.get("company_name") or "Österreichische Glasfaser-Infrastrukturgesellschaft (öGIG)"
     return [
         Paragraph(company, styles["company"]),
         _hr(0.5),
-        Spacer(1, 2 * mm),
-        Paragraph("ÖGIG — Österreichische Glasfaser Infrastruktur Gesellschaft",
-                  styles["ogig"]),
         Spacer(1, 6 * mm),
         Paragraph("Photo Audit of Dug Trenches", styles["h1"]),
         Spacer(1, 1 * mm),
@@ -284,11 +283,6 @@ def _cat4_breakdown(db_data: dict, overrides: dict, styles: dict) -> list:
     cat4_total = db_data["category_counts"][4]
     total_photos = db_data["total_photos"]
 
-    def share(n: int | None) -> str:
-        if n is None or not cat4_total:
-            return EM_DASH
-        return f"{100 * n / cat4_total:.1f}%"
-
     def bold_num(n: Any) -> Paragraph:
         if n is None:
             return Paragraph(EM_DASH, styles["cell"])
@@ -309,34 +303,32 @@ def _cat4_breakdown(db_data: dict, overrides: dict, styles: dict) -> list:
     reasons = [
         ("Duplicate across lots", breakdown.get("duplicate"),
          "Near-duplicate image submitted for multiple baulosen (pHash + metadata match)."),
-        ("No useful evidence", derived["no_useful_evidence"] or None,
+        ("No useful evidence", derived["no_useful_evidence"],
          "Neither duct nor a readable depth measurement detected by the VLM."),
         ("GPS coordinates inconsistent", breakdown.get("gps_inconsistent") or 0,
          "EXIF coordinates fall outside declared lot boundary (pipeline knows this but does not persist it yet)."),
         ("Only warning tape visible", breakdown.get("warning_tape_only"),
          "Duct and depth both missing, only warning tape shown."),
     ]
-    rows: list[list[Any]] = [["Rejection reason", "Photos", "Share of Cat 4", "Notes"]]
+    rows: list[list[Any]] = [["Rejection reason", "Photos", "Notes"]]
     for label, count, note in reasons:
         rows.append([
             Paragraph(label, styles["cell"]),
             bold_num(count),
-            Paragraph(f"<b>{share(count)}</b>", styles["cell"]) if count is not None else Paragraph(EM_DASH, styles["cell"]),
             Paragraph(note, ParagraphStyle("note", parent=styles["cell"], textColor=MUTED)),
         ])
     rows.append([
         Paragraph("<b>Total — Category 4</b>", ParagraphStyle("t1", parent=styles["cell_bold"], textColor=NAVY)),
         Paragraph(f"<b>{cat4_total}</b>", ParagraphStyle("t2", parent=styles["cell_bold"], textColor=NAVY)),
-        Paragraph("<b>100.0%</b>" if cat4_total else EM_DASH, ParagraphStyle("t3", parent=styles["cell_bold"], textColor=NAVY)),
         "",
     ])
-    t = Table(rows, colWidths=[4.5 * cm, 2 * cm, 2.7 * cm, 7.8 * cm], repeatRows=1)
+    t = Table(rows, colWidths=[4.5 * cm, 2 * cm, 10.5 * cm], repeatRows=1)
     t.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.4, HexColor("#CCCCCC")),
         ("BACKGROUND", (0, 0), (-1, 0), NAVY),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("ALIGN", (1, 1), (2, -1), "RIGHT"),
+        ("ALIGN", (1, 1), (1, -1), "RIGHT"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("FONTSIZE", (0, 0), (-1, -1), 9),
         ("BACKGROUND", (0, -1), (-1, -1), BLUE_LIGHT),
@@ -409,15 +401,35 @@ def _addresses(db_data: dict, styles: dict) -> list:
     ]
 
 
-def _map_placeholder(styles: dict) -> list:
-    return [
-        Paragraph("4. Extracted Map", styles["h2"]),
-        Paragraph(
-            "Map export pending — render of photo locations on the trench network "
-            "will be added once the static-map exporter is in place.",
-            styles["footnote"],
-        ),
-    ]
+def _map_image(db_data: dict, styles: dict) -> list:
+    # Render a static PNG of the trench network with category-colored photo
+    # markers. Network/library errors fall back to the placeholder text so a
+    # transient OSM-tile hiccup never breaks the whole report.
+    try:
+        from app.map_render import build_map_png
+        from reportlab.lib.utils import ImageReader
+
+        png_bytes = build_map_png(db_data)
+        img = Image(io.BytesIO(png_bytes), width=17 * cm, height=10.625 * cm)
+        img.hAlign = "CENTER"
+        return [
+            Paragraph("4. Extracted Map", styles["h2"]),
+            img,
+            Spacer(1, 2 * mm),
+            Paragraph(
+                "Photo locations on the trench network. Markers colored by category "
+                "(green = Cat 1, amber = Cat 2, red = Cat 3, slate = Cat 4).",
+                styles["footnote"],
+            ),
+        ]
+    except Exception as exc:
+        return [
+            Paragraph("4. Extracted Map", styles["h2"]),
+            Paragraph(
+                f"Map render skipped ({exc.__class__.__name__}).",
+                styles["footnote"],
+            ),
+        ]
 
 
 class _NumberedCanvas:
@@ -499,7 +511,7 @@ def build_pdf(
     story += _exec_summary(db_data, length_m, styles)
     story += _cat4_breakdown(db_data, cat4_overrides, styles)
     story += _addresses(db_data, styles)
-    story += _map_placeholder(styles)
+    story += _map_image(db_data, styles)
 
     from reportlab.pdfgen.canvas import Canvas
     doc.build(story, canvasmaker=_NumberedCanvas(Canvas).make_wrapper())
