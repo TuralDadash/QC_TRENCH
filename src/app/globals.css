@@ -124,29 +124,15 @@ main {
   padding: 0 32px;
 }
 
-.flow-step-label {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 32px;
-}
-
-.flow-step-num {
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
+.section-tag {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
   color: var(--accent-light);
-  background: rgba(0, 154, 155, 0.1);
-  border: 1px solid rgba(0, 154, 155, 0.22);
-  padding: 5px 11px;
-  border-radius: var(--radius-sm);
-  white-space: nowrap;
-}
-
-.flow-step-line {
-  flex: 1;
-  height: 1px;
-  background: var(--border);
+  margin-bottom: 22px;
+  opacity: 0.8;
 }
 
 .flow-map-container {
@@ -456,14 +442,14 @@ main {
   width: 296px;
   max-height: calc(100vh - 160px);
   overflow-y: auto;
-  background: var(--glass);
-  border: 1px solid var(--glass-border);
+  background: rgba(8, 11, 20, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: var(--radius-xl);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
   display: flex;
   flex-direction: column;
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255,255,255,0.06);
   animation: fade-slide-up 0.3s var(--ease-out-soft);
 }
 
@@ -1797,17 +1783,116 @@ main {
 }
 
 .lock-badge {
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-xl);
-  padding: 14px 28px;
-  font-size: 13px;
+  background: rgba(10, 14, 22, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 32px;
+  padding: 12px 28px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-muted);
-  letter-spacing: 0.01em;
-  box-shadow: var(--shadow-lg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+.map-expand-btn {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(8, 10, 18, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 24px;
+  padding: 9px 22px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--text-secondary);
+  cursor: pointer;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.06);
+  transition:
+    background 0.18s var(--ease-out-soft),
+    border-color 0.18s var(--ease-out-soft),
+    color 0.18s var(--ease-out-soft),
+    transform 0.18s var(--ease-out-soft);
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.map-expand-btn:hover {
+  background: rgba(15, 18, 32, 0.94);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: var(--text);
+  transform: translateX(-50%) translateY(-2px);
+}
+
+.map-expand-btn svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.map-fullscreen-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9500;
+  background: rgba(4, 6, 12, 0.86);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  display: flex;
+  align-items: stretch;
+  padding: 20px;
+  animation: fade-in 0.22s ease;
+}
+
+.map-fullscreen-container {
+  flex: 1;
+  position: relative;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 40px 100px rgba(0, 0, 0, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.map-fullscreen-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 10000;
+  background: rgba(8, 10, 20, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-muted);
+  font-family: inherit;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.map-fullscreen-close:hover {
+  background: rgba(20, 24, 40, 0.96);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: var(--text);
 }
 
 @media print {

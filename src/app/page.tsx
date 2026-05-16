@@ -266,13 +266,19 @@ export default function FlowPage() {
   const mapSectionRef = useRef<HTMLElement>(null);
   const reportSectionRef = useRef<HTMLElement>(null);
   const prevAnalysedRef = useRef(0);
+  const [mapExpanded, setMapExpanded] = useState(false);
 
   useEffect(() => {
-    if (!previewId) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setPreviewId(null); };
+    if (!previewId && !mapExpanded) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setPreviewId(null);
+        setMapExpanded(false);
+      }
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [previewId]);
+  }, [previewId, mapExpanded]);
 
   useEffect(() => {
     const load = () =>
@@ -408,10 +414,7 @@ export default function FlowPage() {
 
       <section id="upload" className="flow-section">
         <div className="flow-inner">
-          <div className="flow-step-label">
-            <span className="flow-step-num">01</span>
-            <span className="flow-step-line" />
-          </div>
+          <span className="section-tag">Upload</span>
           <h1 className="page-title">Trench documentation.<br />AI-verified.</h1>
           <p className="subtitle">Upload site photos. The system checks GPS coordinates, depth measurement, sand bedding, warning tape — and flags every non-compliant section instantly.</p>
         </div>
@@ -592,15 +595,21 @@ export default function FlowPage() {
       <section id="map" ref={mapSectionRef as React.RefObject<HTMLElement>} className="flow-section">
         <div className={`section-content${mapLocked ? " section-blurred" : ""}`}>
           <div className="flow-inner">
-            <div className="flow-step-label">
-              <span className="flow-step-num">02</span>
-              <span className="flow-step-line" />
-            </div>
+            <span className="section-tag">Coverage Map</span>
             <h2 className="page-title">Network &amp; coverage.</h2>
-            <p className="subtitle">9 FCPs · 404 buildings · 19.6km of trench across CLP20417A. Photos pinned to the network, each dot colored by compliance status.</p>
+            <p className="subtitle">9 FCPs · 404 buildings · 19.6 km of trench across CLP20417A. Each photo pinned to the network, colored by compliance category.</p>
           </div>
           <div className="flow-map-container">
             <MapView />
+            <button className="map-expand-btn" onClick={() => setMapExpanded(true)}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 3 21 3 21 9" />
+                <polyline points="9 21 3 21 3 15" />
+                <line x1="21" y1="3" x2="14" y2="10" />
+                <line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
+              Fullscreen map
+            </button>
           </div>
         </div>
         {mapLocked && (
@@ -613,10 +622,7 @@ export default function FlowPage() {
       <section id="report" ref={reportSectionRef as React.RefObject<HTMLElement>} className="flow-section">
         <div className={`section-content${reportLocked ? " section-blurred" : ""}`}>
         <div className="flow-inner">
-            <div className="flow-step-label">
-              <span className="flow-step-num">03</span>
-              <span className="flow-step-line" />
-            </div>
+            <span className="section-tag">Deficiency Report</span>
             <div className="report-header">
               <div>
                 <h2 className="page-title">Deficiency report.</h2>
@@ -741,6 +747,15 @@ export default function FlowPage() {
           </div>
         )}
       </section>
+
+      {mapExpanded && (
+        <div className="map-fullscreen-modal" onClick={() => setMapExpanded(false)}>
+          <div className="map-fullscreen-container" onClick={(e) => e.stopPropagation()}>
+            <button className="map-fullscreen-close" onClick={() => setMapExpanded(false)}>×</button>
+            <MapView />
+          </div>
+        </div>
+      )}
 
       {preview && (
         <div className="modal-backdrop" onClick={() => setPreviewId(null)}>
