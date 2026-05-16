@@ -410,8 +410,8 @@ export default function FlowPage() {
             <span className="flow-step-num">01</span>
             <span className="flow-step-line" />
           </div>
-          <h1 className="page-title">Upload photos</h1>
-          <p className="subtitle">Files, folders, or ZIP archives. GPS and overlay data extracted automatically.</p>
+          <h1 className="page-title">AI quality control<br />for trench documentation.</h1>
+          <p className="subtitle">Upload field photos and get an instant compliance report — GPS matched, AI verified, audit ready.</p>
 
           {phase.kind !== "idle" && (
             <div className="upload-phases">
@@ -586,8 +586,8 @@ export default function FlowPage() {
               <span className="flow-step-num">02</span>
               <span className="flow-step-line" />
             </div>
-            <h2 className="page-title">Coverage map</h2>
-            <p className="subtitle">GPS-matched photos plotted on the construction site. Filter exceptions and trace coverage gaps.</p>
+            <h2 className="page-title">Coverage map.</h2>
+            <p className="subtitle">Every photo plotted on the construction site. Coverage gaps and high-risk segments visible at a glance.</p>
           </div>
           <div className="flow-map-container">
             <MapView />
@@ -604,7 +604,7 @@ export default function FlowPage() {
             </div>
             <div className="report-header">
               <div>
-                <h2 className="page-title">Deficiency Report</h2>
+                <h2 className="page-title">Deficiency report.</h2>
                 <p className="subtitle">
                   {photos.length} photos · {lots.length} lot{lots.length === 1 ? "" : "s"} · {analysedCount} analysed
                 </p>
