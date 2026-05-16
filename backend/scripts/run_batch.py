@@ -23,12 +23,14 @@ from app.pipeline import run
 PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
-def collect_photos(root: Path, limit: int | None) -> list[Path]:
+def collect_photos(root: Path, limit: int | None, offset: int = 0) -> list[Path]:
     if root.is_file():
         return [root]
     photos = sorted(
         p for p in root.rglob("*") if p.suffix.lower() in PHOTO_EXTS and p.is_file()
     )
+    if offset:
+        photos = photos[offset:]
     if limit:
         photos = photos[:limit]
     return photos
@@ -40,10 +42,11 @@ def main() -> int:
     parser.add_argument("--route", required=True, type=Path, help="Trenches GeoJSON or zip")
     parser.add_argument("--out", required=True, type=Path, help="Output JSON path")
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--offset", type=int, default=0, help="Skip the first N photos (sorted)")
     parser.add_argument("--concurrency", type=int, default=4)
     args = parser.parse_args()
 
-    photos = collect_photos(args.photos, args.limit)
+    photos = collect_photos(args.photos, args.limit, args.offset)
     if not photos:
         print(f"no photos found under {args.photos}", file=sys.stderr)
         return 1

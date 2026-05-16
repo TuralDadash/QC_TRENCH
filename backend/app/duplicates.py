@@ -126,6 +126,43 @@ def find_clusters(photos: list[PhotoFingerprint]) -> dict[str, Optional[str]]:
     return result
 
 
+def find_strict_clusters(items: list[tuple[str, int]]) -> dict[str, Optional[str]]:
+    """Pre-VLM near-identical clustering by pHash alone (Hamming <= STRICT_HAMMING).
+
+    items: (photo_id, phash_int) — no GPS / timestamp needed because we run
+    this BEFORE the VLM extracts overlay metadata. Returns the usual
+    photo_id -> root_id (or None) mapping.
+    """
+    n = len(items)
+    parent = list(range(n))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(i: int, j: int) -> None:
+        ri, rj = find(i), find(j)
+        if ri == rj:
+            return
+        if ri < rj:
+            parent[rj] = ri
+        else:
+            parent[ri] = rj
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            if hamming(items[i][1], items[j][1]) <= STRICT_HAMMING:
+                union(i, j)
+
+    result: dict[str, Optional[str]] = {}
+    for i, (pid, _) in enumerate(items):
+        root = find(i)
+        result[pid] = None if root == i else items[root][0]
+    return result
+
+
 def find_clusters_metadata(photos: list[PhotoFingerprint]) -> dict[str, Optional[str]]:
     """Metadata-only clustering. Rule:
       1. Both have GPS within GPS_PROX_M -> duplicate.

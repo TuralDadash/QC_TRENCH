@@ -26,9 +26,12 @@ def to_json(
     address_note_total = 0
     depth_uncertain = 0
     review_count = 0
+    skipped_vlm_count = 0
     addresses: list[dict] = []
 
     for p in photos:
+        if p.get("skipped_vlm"):
+            skipped_vlm_count += 1
         cat = p.get("category", "cat4")
         category_counts[cat] = category_counts.get(cat, 0) + 1
         if p.get("duplicate_of"):
@@ -89,6 +92,8 @@ def to_json(
             "address_paper_notes_total": address_note_total,
             "depth_uncertain_count": depth_uncertain,
             "needs_human_review_count": review_count,
+            "skipped_vlm_count": skipped_vlm_count,
+            "vlm_calls_made": len(photos) - skipped_vlm_count,
             "segment_status_counts": _segment_status_counts(segment_aggregations),
         },
     }
@@ -109,6 +114,7 @@ def _strip_photo(p: dict) -> dict:
         "duplicate_of": p.get("duplicate_of"),
         "duplicate_of_phash": p.get("duplicate_of_phash"),
         "duplicate_of_metadata": p.get("duplicate_of_metadata"),
+        "skipped_vlm": p.get("skipped_vlm", False),
         "needs_human_review": p.get("needs_human_review", False),
         "review_reasons": p.get("review_reasons", []),
         "error": p.get("error"),

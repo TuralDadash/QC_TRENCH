@@ -1,8 +1,17 @@
 """Orchestrator for the trench-photo audit.
 
-Eight steps per photo, plus two cross-photo passes (duplicate clustering,
-segment aggregation). Returns a JSON-shaped dict; the caller decides what
-to do with it (write to disk, return from FastAPI, render to PDF).
+Per-photo path now runs in two phases to save VLM calls on near-identical
+duplicates:
+
+  1. Decode + pHash every image locally (cheap, no API).
+  2. Strict pHash clustering — Hamming <= 6 means same photo (re-encode /
+     trivial crop). Only the root of each cluster goes to Gemini; the rest
+     are flagged `skipped_vlm: true` with `duplicate_of` pointing at the root.
+  3. Gemini VLM assessment on the surviving roots.
+  4. Loose-pHash + metadata clustering on the assessed photos (kept for the
+     duplicate_comparison block in the report).
+
+Returns a JSON-shaped dict; the caller decides what to do with it.
 """
 
 from __future__ import annotations
@@ -11,8 +20,7 @@ import asyncio
 import io
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -47,26 +55,33 @@ def _validate_metadata(meta: vlm.BurntInMetadata) -> tuple[Optional[tuple[float,
 
 
 def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
+    """Parse ISO timestamp; normalize to naive UTC so mixed tz-aware /
+    tz-naive values can still be subtracted in duplicate clustering."""
     if not ts:
         return None
     try:
-        return datetime.fromisoformat(ts)
+        dt = datetime.fromisoformat(ts)
     except ValueError:
         return None
+    if dt.tzinfo is not None:
+        from datetime import timezone
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
 
 
 def _phash_hex(phash_int: int) -> str:
     return f"{phash_int:064x}"
 
 
-def _process_one_sync(
-    photo_path: Path,
-    assess_fn: Callable[[bytes, str], vlm.PhotoAssessment],
-) -> dict:
-    """Step 1-5 for a single photo. Returns a raw record to be enriched later."""
+def _empty_metadata() -> dict:
+    return {"gps": None, "timestamp": None, "valid": False, "source": "burnt_in_overlay"}
+
+
+def _phash_one_sync(photo_path: Path) -> dict:
+    """Phase 1: decode image and compute pHash. No VLM call."""
     photo_id = uuid.uuid4().hex[:10]
-    image_bytes = photo_path.read_bytes()
     try:
+        image_bytes = photo_path.read_bytes()
         img = Image.open(io.BytesIO(image_bytes))
         img.load()
     except Exception as e:
@@ -77,9 +92,14 @@ def _process_one_sync(
             "category": "cat4",
             "reason": "decode_failed",
             "phash": None,
-            "metadata": {"gps": None, "timestamp": None, "valid": False, "source": "burnt_in_overlay"},
+            "_phash_int": None,
+            "_path": photo_path,
+            "metadata": _empty_metadata(),
             "signals": {},
             "duplicate_of": None,
+            "duplicate_of_phash": None,
+            "duplicate_of_metadata": None,
+            "skipped_vlm": False,
             "segment_id": None,
             "segment_distance_m": None,
             "segment_position_m": None,
@@ -87,51 +107,94 @@ def _process_one_sync(
 
     phash_int = duplicates.average_phash(img)
     mime = "image/jpeg" if photo_path.suffix.lower() in (".jpg", ".jpeg") else "image/png"
-    assessment = assess_fn(image_bytes, mime)
-
-    gps, ts_iso, valid = _validate_metadata(assessment.burnt_in_metadata)
-
     return {
         "id": photo_id,
         "filename": photo_path.name,
         "phash": _phash_hex(phash_int),
         "_phash_int": phash_int,
-        "metadata": {
-            "gps": {"lat": gps[0], "lon": gps[1]} if gps else None,
-            "timestamp": ts_iso,
-            "valid": valid,
-            "source": "burnt_in_overlay",
-            "raw_overlay_text": assessment.burnt_in_metadata.raw_text,
-        },
-        "signals": {
-            "duct": assessment.duct.model_dump(),
-            "depth": assessment.depth.model_dump(),
-            "sand_bedding": assessment.sand_bedding.model_dump(),
-            "address_label": assessment.address_label.model_dump(),
-        },
-        "_assessment": assessment,
+        "_path": photo_path,
+        "_mime": mime,
+        "metadata": _empty_metadata(),
+        "signals": {},
         "duplicate_of": None,
+        "duplicate_of_phash": None,
+        "duplicate_of_metadata": None,
+        "skipped_vlm": False,
         "segment_id": None,
         "segment_distance_m": None,
         "segment_position_m": None,
     }
 
 
-async def _process_async(
-    photo_paths: list[Path],
+def _assess_one_sync(
+    record: dict,
     assess_fn: Callable[[bytes, str], vlm.PhotoAssessment],
-    concurrency: int,
-) -> list[dict]:
+) -> None:
+    """Phase 3: run Gemini on a phashed record. Mutates record in place."""
+    image_bytes = Path(record["_path"]).read_bytes()
+    assessment = assess_fn(image_bytes, record["_mime"])
+    gps, ts_iso, valid = _validate_metadata(assessment.burnt_in_metadata)
+    record["metadata"] = {
+        "gps": {"lat": gps[0], "lon": gps[1]} if gps else None,
+        "timestamp": ts_iso,
+        "valid": valid,
+        "source": "burnt_in_overlay",
+        "raw_overlay_text": assessment.burnt_in_metadata.raw_text,
+    }
+    record["signals"] = {
+        "duct": assessment.duct.model_dump(),
+        "depth": assessment.depth.model_dump(),
+        "sand_bedding": assessment.sand_bedding.model_dump(),
+        "address_label": assessment.address_label.model_dump(),
+        "has_warning_tape": assessment.has_warning_tape,
+        "has_warning_tape_confidence": assessment.has_warning_tape_confidence,
+    }
+    record["_assessment"] = assessment
+
+
+def _mark_skipped(record: dict, root_id: str) -> None:
+    """Phase 2 follow-up: record is a strict-pHash duplicate of root_id.
+    No VLM call will be made; populate fields so downstream code is happy."""
+    record["duplicate_of"] = root_id
+    record["duplicate_of_phash"] = root_id
+    record["duplicate_of_metadata"] = root_id
+    record["skipped_vlm"] = True
+    record["category"] = "cat4"
+    record["reason"] = f"duplicate_of:{root_id}"
+    record["signals"] = {}
+    record["metadata"] = _empty_metadata()
+
+
+async def _phash_async(photo_paths: list[Path], concurrency: int) -> list[dict]:
     loop = asyncio.get_running_loop()
     sem = asyncio.Semaphore(concurrency)
     executor = ThreadPoolExecutor(max_workers=concurrency)
 
     async def worker(p: Path) -> dict:
         async with sem:
-            return await loop.run_in_executor(executor, _process_one_sync, p, assess_fn)
+            return await loop.run_in_executor(executor, _phash_one_sync, p)
 
     try:
         return await asyncio.gather(*(worker(p) for p in photo_paths))
+    finally:
+        executor.shutdown(wait=True)
+
+
+async def _assess_async(
+    records: list[dict],
+    assess_fn: Callable[[bytes, str], vlm.PhotoAssessment],
+    concurrency: int,
+) -> None:
+    loop = asyncio.get_running_loop()
+    sem = asyncio.Semaphore(concurrency)
+    executor = ThreadPoolExecutor(max_workers=concurrency)
+
+    async def worker(r: dict) -> None:
+        async with sem:
+            await loop.run_in_executor(executor, _assess_one_sync, r, assess_fn)
+
+    try:
+        await asyncio.gather(*(worker(r) for r in records))
     finally:
         executor.shutdown(wait=True)
 
@@ -147,11 +210,29 @@ def run(
     assess_fn = assess_fn or vlm.assess
     segments = geo.load_trenches(route_path)
 
-    photos = asyncio.run(_process_async(photo_paths, assess_fn, concurrency))
+    # Phase 1: decode + pHash all photos.
+    photos = asyncio.run(_phash_async(photo_paths, concurrency))
 
-    # Cross-photo: duplicate clustering. Run pHash and metadata-only side by
-    # side so the report can compare them; pHash stays the primary that feeds
-    # classify.classify_photo (-> cat4) to preserve current behavior.
+    # Phase 2: strict pHash clustering BEFORE the VLM. Anything with Hamming
+    # <= 6 to an earlier photo is a duplicate; skip its Gemini call.
+    strict_items = [
+        (p["id"], p["_phash_int"]) for p in photos if p.get("_phash_int") is not None
+    ]
+    strict_clusters = duplicates.find_strict_clusters(strict_items)
+
+    for p in photos:
+        root = strict_clusters.get(p["id"])
+        if root:
+            _mark_skipped(p, root)
+
+    # Phase 3: VLM only on photos that survived strict clustering.
+    to_assess = [
+        p for p in photos
+        if p.get("_phash_int") is not None and not p.get("skipped_vlm")
+    ]
+    asyncio.run(_assess_async(to_assess, assess_fn, concurrency))
+
+    # Phase 4: loose pHash + metadata clustering on the assessed photos only.
     fingerprints = [
         duplicates.PhotoFingerprint(
             id=p["id"],
@@ -162,17 +243,22 @@ def run(
             address=(p.get("signals", {}).get("address_label") or {}).get("text"),
         )
         for p in photos
-        if p.get("phash")
+        if p.get("phash") and not p.get("skipped_vlm")
     ]
     dup_phash = duplicates.find_clusters(fingerprints)
     dup_meta = duplicates.find_clusters_metadata(fingerprints)
     for p in photos:
-        p["duplicate_of"] = dup_phash.get(p["id"])
-        p["duplicate_of_phash"] = dup_phash.get(p["id"])
-        p["duplicate_of_metadata"] = dup_meta.get(p["id"])
+        if p.get("skipped_vlm"):
+            continue
+        if p.get("phash"):
+            p["duplicate_of"] = dup_phash.get(p["id"])
+            p["duplicate_of_phash"] = dup_phash.get(p["id"])
+            p["duplicate_of_metadata"] = dup_meta.get(p["id"])
 
-    # Geo-match
+    # Geo-match: only assessed photos have GPS to project.
     for p in photos:
+        if p.get("skipped_vlm"):
+            continue
         gps = p["metadata"]["gps"]
         if gps is None:
             continue
@@ -187,8 +273,11 @@ def run(
             p["segment_distance_m"] = proj.distance_m
             p["_off_route"] = True
 
-    # Photo classification
+    # Photo classification: skip strict-pHash duplicates (already cat4) and
+    # decode-failures.
     for p in photos:
+        if p.get("skipped_vlm"):
+            continue
         if "_assessment" in p:
             cls = classify.classify_photo(
                 p["_assessment"],
@@ -200,7 +289,7 @@ def run(
             p["needs_human_review"] = cls.needs_human_review
             p["review_reasons"] = cls.review_reasons
 
-    # Segment aggregation needs lightweight dicts
+    # Segment aggregation needs lightweight dicts.
     classified_photos = [
         {
             "id": p["id"],
@@ -213,11 +302,13 @@ def run(
     ]
     seg_aggs = classify.aggregate_segments(segments, classified_photos)
 
-    # Strip private fields
+    # Strip private fields.
     for p in photos:
         p.pop("_assessment", None)
         p.pop("_phash_int", None)
         p.pop("_off_route", None)
+        p.pop("_path", None)
+        p.pop("_mime", None)
 
     return report.to_json(
         photos=photos,
