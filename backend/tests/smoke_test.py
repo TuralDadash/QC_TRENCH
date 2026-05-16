@@ -25,7 +25,6 @@ from app.vlm import (
     DepthSignal,
     DuctSignal,
     PhotoAssessment,
-    PrivacyFlags,
     SandBeddingSignal,
 )
 
@@ -71,7 +70,7 @@ def build_assessments():
         # green: both duct + depth
         photos[0].name: PhotoAssessment(
             is_construction_photo=True,
-            duct=DuctSignal(visible=True, confidence=0.9, notes="black corrugated"),
+            duct=DuctSignal(visible=True, confidence=0.9),
             depth=DepthSignal(ruler_visible=True, depth_value_cm=95.0, uncertain=False, confidence=0.85),
             sand_bedding=SandBeddingSignal(status="sand", confidence=0.7),
             burnt_in_metadata=BurntInMetadata(gps_lat=ROUTE_LAT, gps_lon=ROUTE_LON, timestamp_iso="2024-07-01T10:00:00"),
@@ -94,13 +93,12 @@ def build_assessments():
             is_construction_photo=False,
             burnt_in_metadata=BurntInMetadata(gps_lat=ROUTE_LAT, gps_lon=ROUTE_LON, timestamp_iso="2024-07-01T10:15:00"),
         ),
-        # cat4 ai-generated
+        # cat4 off-route (far from any segment)
         photos[4].name: PhotoAssessment(
             is_construction_photo=True,
-            is_likely_ai_generated=True,
             duct=DuctSignal(visible=True, confidence=0.9),
             depth=DepthSignal(ruler_visible=True, depth_value_cm=90.0, confidence=0.8, uncertain=False),
-            burnt_in_metadata=BurntInMetadata(gps_lat=ROUTE_LAT, gps_lon=ROUTE_LON, timestamp_iso="2024-07-01T10:20:00"),
+            burnt_in_metadata=BurntInMetadata(gps_lat=OFF_ROUTE_LAT, gps_lon=OFF_ROUTE_LON, timestamp_iso="2024-07-01T10:20:00"),
         ),
     }
     return photos, scripted
@@ -134,17 +132,43 @@ def main() -> int:
     assert cats["green"] >= 1, f"expected at least one green, got {cats}"
     assert cats["yellow"] >= 1, f"expected at least one yellow, got {cats}"
     assert cats["red"] >= 1, f"expected at least one red, got {cats}"
-    assert cats["cat4"] >= 2, f"expected at least 2 cat4 (none + ai), got {cats}"
-    assert agg["ai_generated_flagged"] >= 1
+    assert cats["cat4"] >= 2, f"expected at least 2 cat4 (none + off-route), got {cats}"
+    assert agg["off_route_count"] >= 1
     assert agg["address_labels_found"] >= 1
 
     # Validate top-level shape
-    for key in ("route_id", "photos", "segments", "aggregates"):
+    for key in (
+        "route_id",
+        "photos",
+        "segments",
+        "aggregates",
+        "addresses",
+        "duplicate_addresses",
+        "duplicate_comparison",
+    ):
         assert key in result, f"missing key {key}"
     # Per-photo shape
     p0 = result["photos"][0]
-    for key in ("id", "category", "metadata", "signals", "is_likely_ai_generated"):
+    for key in (
+        "id",
+        "category",
+        "metadata",
+        "signals",
+        "duplicate_of_phash",
+        "duplicate_of_metadata",
+    ):
         assert key in p0, f"photo missing key {key}"
+    # Duplicate comparison block carries both counts
+    comp = result["duplicate_comparison"]
+    for key in (
+        "phash_duplicate_count",
+        "metadata_duplicate_count",
+        "agree_both",
+        "phash_only",
+        "metadata_only",
+        "cluster_jaccard",
+    ):
+        assert key in comp, f"duplicate_comparison missing key {key}"
 
     # Segment statuses
     statuses = {s["status"] for s in result["segments"]}

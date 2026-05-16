@@ -1,18 +1,43 @@
+version: "3.9"
+
 services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: trench_qc
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
   app:
     build:
       context: .
       target: dev
     ports:
       - "3000:3000"
+    depends_on:
+      - postgres
     volumes:
       - ./src:/app/src
       - ./public:/app/public
+      - ./util:/app/util
+      - ./backend:/app/backend
       - ./next.config.js:/app/next.config.js
       - ./tsconfig.json:/app/tsconfig.json
       - ./next-env.d.ts:/app/next-env.d.ts
       - ./data:/app/data
     environment:
-      - NODE_ENV=development
-      - DATA_DIR=/app/data
+      NODE_ENV: development
+      DATA_DIR: /app/data
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/trench_qc
+      # Passed through from the host env / a root .env file. Required for the
+      # "Process" button (Gemini analysis); the app still runs without it.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     restart: unless-stopped
+
+volumes:
+  postgres_data:

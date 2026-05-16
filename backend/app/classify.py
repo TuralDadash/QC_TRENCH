@@ -5,7 +5,7 @@ Per-photo:
   duct visible only                    -> yellow
   depth ruler visible only             -> red
   neither                              -> cat4 (no_useful_evidence)
-  duplicate / ai-generated / off-route -> cat4 with that reason (overrides above)
+  duplicate / off-route                -> cat4 with that reason (overrides above)
 
 Per-segment: bin photos along the polyline in 5m cells, infer status from
 the worst-covered bin. Bins without any photo are coverage gaps and pull
@@ -83,8 +83,6 @@ def classify_photo(
         return PhotoClassification(
             "cat4", f"duplicate_of:{duplicate_of}", needs_review, review_reasons
         )
-    if assessment.is_likely_ai_generated:
-        return PhotoClassification("cat4", "ai_generated", needs_review, review_reasons)
     if off_route:
         return PhotoClassification("cat4", "off_route", needs_review, review_reasons)
 
@@ -98,12 +96,38 @@ def classify_photo(
     )
 
     if duct_ok and depth_ok:
-        return PhotoClassification("green", None, needs_review, review_reasons)
+        depth_str = _depth_str(assessment.depth)
+        return PhotoClassification(
+            "green",
+            f"duct visible (conf {assessment.duct.confidence:.2f}) and depth readable ({depth_str})",
+            needs_review,
+            review_reasons,
+        )
     if duct_ok:
-        return PhotoClassification("yellow", None, needs_review, review_reasons)
+        return PhotoClassification(
+            "yellow",
+            f"duct visible (conf {assessment.duct.confidence:.2f}); no readable depth",
+            needs_review,
+            review_reasons,
+        )
     if depth_ok:
-        return PhotoClassification("red", None, needs_review, review_reasons)
+        depth_str = _depth_str(assessment.depth)
+        return PhotoClassification(
+            "red",
+            f"depth readable ({depth_str}); duct not visible",
+            needs_review,
+            review_reasons,
+        )
     return PhotoClassification("cat4", "no_useful_evidence", needs_review, review_reasons)
+
+
+def _depth_str(depth) -> str:
+    if depth.depth_value_cm is not None:
+        return f"{depth.depth_value_cm:.0f} cm"
+    if depth.depth_range_cm and len(depth.depth_range_cm) == 2:
+        lo, hi = depth.depth_range_cm
+        return f"{lo:.0f}-{hi:.0f} cm"
+    return "value uncertain"
 
 
 @dataclass
