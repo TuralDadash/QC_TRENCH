@@ -1,6 +1,22 @@
 import { promises as fs } from "fs";
 import path from "path";
 
+// Shape returned by util/analyze_image.py — keys mirror the TrenchAnalysis
+// pydantic model in that script, so the JSON is stored verbatim.
+export type GeminiAnalysis = {
+  has_trench: boolean;
+  has_trench_confidence: number;
+  has_vertical_measuring_stick: boolean;
+  has_vertical_measuring_stick_confidence: number;
+  has_address_sheet: boolean;
+  has_address_sheet_confidence: number;
+  addresses: string[];
+  has_sand_bedding: boolean;
+  has_sand_bedding_confidence: number;
+  depth_cm: number | null;
+  depth_cm_confidence: number;
+};
+
 export type PhotoRecord = {
   id: string;
   filename: string;
@@ -28,6 +44,16 @@ export type PhotoRecord = {
   overlayTakenAt: string | null;
   overlayFound: boolean;
   overlayDetected: boolean;
+  analysis?: GeminiAnalysis | null;
+  analyzedAt?: string | null;
+  analysisError?: string | null;
+};
+
+export type AnalysisUpdate = {
+  id: string;
+  analysis: GeminiAnalysis | null;
+  analyzedAt: string | null;
+  analysisError: string | null;
 };
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
@@ -70,6 +96,25 @@ export async function clearAll() {
 export async function appendRecords(newOnes: PhotoRecord[]) {
   const existing = await loadIndex();
   const merged = [...existing, ...newOnes];
+  await saveIndex(merged);
+  return merged;
+}
+
+// Patch Gemini analysis results onto existing records by id. Reloads the
+// index each call so it's safe to interleave with uploads appending records.
+export async function mergeAnalysis(updates: AnalysisUpdate[]) {
+  const existing = await loadIndex();
+  const byId = new Map(updates.map((u) => [u.id, u]));
+  const merged = existing.map((rec) => {
+    const u = byId.get(rec.id);
+    if (!u) return rec;
+    return {
+      ...rec,
+      analysis: u.analysis,
+      analyzedAt: u.analyzedAt,
+      analysisError: u.analysisError,
+    };
+  });
   await saveIndex(merged);
   return merged;
 }
