@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import Link from "next/link";
 import {
   TileLayer,
   LayersControl,
@@ -425,41 +424,6 @@ export default function MapView() {
           {exceptionMode ? "Exceptions only" : "Exception Mode"}
         </button>
       </div>
-
-      {photos.length === 0 && (
-        <div className="map-onboard">
-          <div className="map-onboard-card">
-            <div className="map-onboard-title">Trench Photo Audit</div>
-            <p className="map-onboard-sub">
-              Upload field photos and let the system map, analyse, and flag compliance gaps automatically.
-            </p>
-            <div className="map-onboard-steps">
-              <div className="map-onboard-step">
-                <span className="map-onboard-num">01</span>
-                <div>
-                  <div className="map-onboard-step-title">Upload</div>
-                  <div className="map-onboard-step-desc">Drop photos, folders, or ZIP archives. GPS and overlay metadata extracted automatically.</div>
-                </div>
-              </div>
-              <div className="map-onboard-step">
-                <span className="map-onboard-num">02</span>
-                <div>
-                  <div className="map-onboard-step-title">Map</div>
-                  <div className="map-onboard-step-desc">Photos are plotted on the construction site. Filter exceptions and trace GPS coverage.</div>
-                </div>
-              </div>
-              <div className="map-onboard-step">
-                <span className="map-onboard-num">03</span>
-                <div>
-                  <div className="map-onboard-step-title">Report</div>
-                  <div className="map-onboard-step-desc">AI assigns Cat 1–4 compliance ratings per lot and surfaces every deficiency.</div>
-                </div>
-              </div>
-            </div>
-            <Link href="/upload" className="btn">Upload photos</Link>
-          </div>
-        </div>
-      )}
 
       {photos.length > 0 && (
         <div className="photo-panel">
