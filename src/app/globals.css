@@ -163,17 +163,36 @@ main {
     background 0.15s var(--ease-out-soft),
     color 0.15s var(--ease-out-soft);
   white-space: nowrap;
+  position: relative;
+}
+
+.topnav-item::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 12px;
+  right: 12px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0;
+  transform: scaleX(0);
+  transition: opacity 0.18s, transform 0.18s var(--ease-out-soft);
 }
 
 .topnav-item:hover {
-  background: rgba(0, 0, 0, 0.05);
+  background: rgba(0, 0, 0, 0.04);
   color: var(--text);
 }
 
 .topnav-item.active {
-  background: rgba(13, 148, 136, 0.1);
   color: var(--accent-dark);
   font-weight: 600;
+}
+
+.topnav-item.active::after {
+  opacity: 1;
+  transform: scaleX(1);
 }
 
 .topnav-step {
@@ -682,7 +701,7 @@ main {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  padding: 28px 32px;
+  padding: 32px 36px;
   box-shadow: var(--shadow-sm);
   animation: fade-slide-up 0.36s var(--ease-out-soft);
 }
