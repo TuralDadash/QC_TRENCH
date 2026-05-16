@@ -50,7 +50,7 @@ export default function UploadPage() {
   useEffect(() => {
     if (selectedPath || availablePaths.length === 0) return;
     const def =
-      availablePaths.find((p) => p.id === "util:v1.txt") ?? availablePaths[0];
+      availablePaths.find((p) => p.id === "backend") ?? availablePaths[0];
     setSelectedPath(def.id);
   }, [availablePaths, selectedPath]);
 
