@@ -1,14 +1,14 @@
 @import "leaflet/dist/leaflet.css";
 
 :root {
-  --bg:               #ffffff;
-  --bg-alt:           #f6f8fa;
-  --surface:          #ffffff;
-  --surface-2:        #f6f8fa;
-  --glass:            rgba(255, 255, 255, 0.97);
-  --glass-border:     #d1d9e0;
-  --border:           #d1d9e0;
-  --border-strong:    #818b98;
+  --bg:               #eef2f7;
+  --bg-alt:           #e8edf4;
+  --surface:          rgba(255, 255, 255, 0.82);
+  --surface-2:        rgba(255, 255, 255, 0.55);
+  --glass:            rgba(255, 255, 255, 0.82);
+  --glass-border:     rgba(255, 255, 255, 0.9);
+  --border:           rgba(0, 0, 0, 0.08);
+  --border-strong:    rgba(0, 0, 0, 0.18);
 
   --text:             #1f2328;
   --text-secondary:   #59636e;
@@ -65,7 +65,7 @@ html, body {
   margin: 0;
   padding: 0;
   height: 100%;
-  font-family: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
@@ -118,12 +118,13 @@ main {
 }
 
 .flow-map-container {
-  height: 580px;
+  height: 620px;
   position: relative;
   margin: 24px 32px 0;
   border-radius: var(--radius-xl);
   overflow: hidden;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6), 0 4px 16px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 @keyframes flow-reveal-in {
@@ -364,15 +365,14 @@ main {
   top: 14px;
   left: 14px;
   z-index: 1000;
-  background: rgba(255, 255, 255, 0.97);
-  border: 1px solid rgba(0, 0, 0, 0.09);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.95);
   border-radius: var(--radius-lg);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   padding: 14px 16px;
   min-width: 300px;
   max-width: 340px;
-
   animation: fade-slide-down 0.4s var(--ease-out-soft);
 }
 
@@ -398,31 +398,33 @@ main {
   letter-spacing: 0.02em;
 }
 
-.mnp-exception-btn {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+.mnp-mode-btn {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 4px 10px;
+  padding: 5px 11px;
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
   font-family: inherit;
   color: var(--text-muted);
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
   flex-shrink: 0;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
-.mnp-exception-btn:hover { background: rgba(255, 255, 255, 0.1); color: var(--text); }
-.mnp-exception-btn.active { background: var(--err-bg); border-color: var(--err-border); color: var(--err); }
+.mnp-mode-btn:hover { background: rgba(255,255,255,0.9); color: var(--text); }
+.mnp-mode-btn.qc { background: rgba(34,197,94,0.1); border-color: rgba(34,197,94,0.3); color: #15803d; }
 
 .mnp-stats-row {
   display: flex;
   align-items: center;
   gap: 0;
   padding: 10px 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
 .mnp-stat {
@@ -458,7 +460,7 @@ main {
 .mnp-divider {
   width: 1px;
   height: 28px;
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--border);
   flex-shrink: 0;
 }
 
@@ -476,12 +478,13 @@ main {
 }
 
 .mnp-qc-bar {
-  height: 6px;
-  border-radius: 3px;
+  height: 8px;
+  border-radius: 4px;
   overflow: hidden;
   display: flex;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-alt);
   margin-bottom: 7px;
+  gap: 1px;
 }
 
 .mnp-qc-seg {
@@ -506,15 +509,15 @@ main {
   bottom: 60px;
   left: 14px;
   z-index: 1000;
-  background: rgba(255, 255, 255, 0.97);
-  border: 1px solid rgba(0, 0, 0, 0.09);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.95);
   border-radius: var(--radius-lg);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   padding: 12px 14px;
-
   pointer-events: none;
-  min-width: 180px;
+  min-width: 210px;
+  max-width: 230px;
 }
 
 .mlp-section-label {
@@ -528,9 +531,9 @@ main {
 
 .mlp-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 7px;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 .mlp-row:last-child { margin-bottom: 0; }
@@ -540,6 +543,7 @@ main {
   height: 3px;
   border-radius: 2px;
   flex-shrink: 0;
+  margin-top: 5px;
 }
 
 .mlp-dot {
@@ -565,8 +569,15 @@ main {
 
 .mlp-divider {
   height: 1px;
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--border);
   margin: 8px 0;
+}
+
+.mlp-desc {
+  font-size: 9px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin-top: 1px;
 }
 
 .leaflet-popup-content-wrapper {
@@ -697,8 +708,10 @@ main {
 }
 
 .upload-form-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-xl);
   padding: 32px 36px;
 }
@@ -995,8 +1008,10 @@ main {
   align-items: center;
   padding: 10px 16px;
   margin-bottom: 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-md);
   font-size: 12px;
   animation: fade-slide-up 0.3s var(--ease-out-soft);
@@ -1013,7 +1028,9 @@ main {
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
-  background: var(--surface);
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border-radius: var(--radius-lg);
   overflow: hidden;
 }
@@ -1028,7 +1045,7 @@ main {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   white-space: nowrap;
-  background: var(--surface-2);
+  background: rgba(255, 255, 255, 0.4);
 }
 
 .results td {
@@ -1102,8 +1119,10 @@ main {
 }
 
 .report-kpi-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
   padding: 20px 28px;
   min-width: 110px;
@@ -1193,13 +1212,14 @@ main {
 }
 
 .lot-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
   margin-bottom: 8px;
   overflow: hidden;
-  transition:
-    border-color 0.2s var(--ease-out-soft),
+  transition: border-color 0.2s var(--ease-out-soft);
   animation: fade-slide-up 0.32s var(--ease-out-soft);
 }
 

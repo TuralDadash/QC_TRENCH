@@ -9,22 +9,35 @@ import type { PathOptions } from "leaflet";
 import type { PhotoRecord } from "@/lib/store";
 
 const AUSTRIA_CENTER: [number, number] = [47.5162, 14.5501];
+const COVERAGE_RADIUS_M = 80;
 
-const CAT_COLORS = {
-  cat1:    "#22c55e",
-  cat2:    "#f59e0b",
-  cat3:    "#ef4444",
-  cat4:    "#a855f7",
-  pending: "#64748b",
-} as const;
+type TrenchStatus = "complete" | "partial" | "missing";
 
-const TRENCH_TYPES: Array<{ color: string; label: string; pct: number }> = [
-  { color: "#FE0DFF", label: "Hausanschluss",         pct: 41 },
-  { color: "#0D15FF", label: "Künette versiegelt",    pct: 27 },
-  { color: "#3B3B3B", label: "Pressung",              pct: 14 },
-  { color: "#1B7CBD", label: "Künette unversiegelt",  pct: 13 },
-  { color: "#958CCF", label: "Querung offen",         pct:  4 },
-  { color: "#CC6E84", label: "Privatstraße",          pct:  1 },
+const QC_COLORS: Record<TrenchStatus, string> = {
+  complete: "#22c55e",
+  partial:  "#f59e0b",
+  missing:  "#ef4444",
+};
+
+const QC_LABELS: Record<TrenchStatus, string> = {
+  complete: "Complete",
+  partial:  "Partial",
+  missing:  "Missing",
+};
+
+const QC_DESC: Record<TrenchStatus, string> = {
+  complete: "Compliant photos, GPS & depth confirmed",
+  partial:  "Photos present but quality insufficient",
+  missing:  "No compliant photos available",
+};
+
+const TRENCH_TYPES: Array<{ color: string; label: string }> = [
+  { color: "#FE0DFF", label: "Hausanschluss" },
+  { color: "#0D15FF", label: "Künette versiegelt" },
+  { color: "#3B3B3B", label: "Pressung" },
+  { color: "#1B7CBD", label: "Künette unversiegelt" },
+  { color: "#958CCF", label: "Querung offen" },
+  { color: "#CC6E84", label: "Privatstraße" },
 ];
 
 const GEOJSON_FILES = {
@@ -41,74 +54,125 @@ type GeoLayers = {
   trenches?: FeatureCollection;
 };
 
+function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000;
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+  const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function minDistToLineString(pLat: number, pLon: number, coords: number[][]): number {
+  let best = Infinity;
+  for (let i = 0; i < coords.length; i++) {
+    const d = haversineM(pLat, pLon, coords[i][1], coords[i][0]);
+    if (d < best) best = d;
+    if (i < coords.length - 1) {
+      const midLat = (coords[i][1] + coords[i + 1][1]) / 2;
+      const midLon = (coords[i][0] + coords[i + 1][0]) / 2;
+      const dm = haversineM(pLat, pLon, midLat, midLon);
+      if (dm < best) best = dm;
+    }
+  }
+  return best;
+}
+
+function computeStatus(coords: number[][], geoPhotos: PhotoRecord[]): TrenchStatus {
+  const lats = coords.map((c) => c[1]);
+  const lons = coords.map((c) => c[0]);
+  const pad = 0.001;
+  const minLat = Math.min(...lats) - pad;
+  const maxLat = Math.max(...lats) + pad;
+  const minLon = Math.min(...lons) - pad;
+  const maxLon = Math.max(...lons) + pad;
+
+  const nearby = geoPhotos.filter(
+    (p) =>
+      p.latitude! >= minLat &&
+      p.latitude! <= maxLat &&
+      p.longitude! >= minLon &&
+      p.longitude! <= maxLon &&
+      minDistToLineString(p.latitude!, p.longitude!, coords) <= COVERAGE_RADIUS_M,
+  );
+
+  if (nearby.length === 0) return "missing";
+  const analysed = nearby.filter((p) => p.analysis);
+  if (analysed.length === 0) return "partial";
+  const passing = analysed.filter((p) => {
+    const a = p.analysis as Record<string, unknown>;
+    return a.trench && a.measuringStick && a.sideView;
+  });
+  return passing.length / analysed.length >= 0.5 ? "complete" : "partial";
+}
+
 function propsTable(props: GeoJsonProperties, keys: string[]) {
   if (!props) return "";
   const rows = keys
     .filter((k) => props[k] != null && props[k] !== "")
-    .map((k) => `<tr><td style="color:#8b9ab0;padding-right:8px;font-size:10px;white-space:nowrap">${k}</td><td style="color:#e2e8f2;font-size:11px">${String(props[k])}</td></tr>`)
+    .map(
+      (k) =>
+        `<tr><td style="color:#59636e;padding-right:8px;font-size:10px;white-space:nowrap">${k}</td><td style="color:#1f2328;font-size:11px">${String(props[k])}</td></tr>`,
+    )
     .join("");
   return `<table style="border-collapse:collapse">${rows}</table>`;
 }
 
-function trenchStyle(feature?: Feature<Geometry, GeoJsonProperties>): PathOptions {
-  const color = (feature?.properties?.fillColor as string | undefined) ?? "#3b82f6";
-  return { color, weight: 5, opacity: 0.9, lineCap: "round", lineJoin: "round" };
-}
-
 function fcpPolygonStyle(feature?: Feature<Geometry, GeoJsonProperties>): PathOptions {
-  const color = (feature?.properties?.fillColor as string | undefined) ?? "#586cde";
-  return { color, weight: 1.5, fillColor: color, fillOpacity: 0.1, opacity: 0.5 };
+  const color = (feature?.properties?.fillColor as string | undefined) ?? "#7c3aed";
+  return { color, weight: 1.5, fillColor: color, fillOpacity: 0.08, opacity: 0.45 };
 }
 
 const clusterStyle: PathOptions = {
   color: "#7fb347",
   weight: 2,
-  fillOpacity: 0.03,
+  fillOpacity: 0.02,
   dashArray: "8 5",
-  opacity: 0.7,
+  opacity: 0.6,
 };
 
 function markerColor(p: PhotoRecord): string {
-  if (!p.hasGps || !p.analysis) return CAT_COLORS.pending;
+  if (!p.hasGps || !p.analysis) return "#94a3b8";
   const a = p.analysis as Record<string, unknown>;
-  if (a.isDuplicate || a.gpsOnSite === false) return CAT_COLORS.cat4;
+  if (a.isDuplicate || a.gpsOnSite === false) return QC_COLORS.missing;
   const keys = ["trench", "measuringStick", "sandBedding", "warningTape", "sideView"];
-  if (keys.every((k) => a[k])) return CAT_COLORS.cat1;
-  if (!a.trench || !a.sideView) return CAT_COLORS.cat3;
-  return CAT_COLORS.cat2;
+  if (keys.every((k) => a[k])) return QC_COLORS.complete;
+  if (!a.trench || !a.sideView) return QC_COLORS.missing;
+  return QC_COLORS.partial;
 }
 
 function markerCategory(p: PhotoRecord): string {
   if (!p.hasGps) return "No GPS";
   if (!p.analysis) return "Pending";
   const a = p.analysis as Record<string, unknown>;
-  if (a.isDuplicate || a.gpsOnSite === false) return "Cat 4 · Suspect";
+  if (a.isDuplicate || a.gpsOnSite === false) return "Missing · Suspect";
   const keys = ["trench", "measuringStick", "sandBedding", "warningTape", "sideView"];
-  if (keys.every((k) => a[k])) return "Cat 1 · Pass";
-  if (!a.trench || !a.sideView) return "Cat 3 · Critical";
-  return "Cat 2 · Partial";
+  if (keys.every((k) => a[k])) return "Complete";
+  if (!a.trench || !a.sideView) return "Missing · Critical";
+  return "Partial";
 }
 
 function makeFcpIcon(name: string) {
   return L.divIcon({
     className: "",
     html: `<div style="
-      width:48px;height:48px;
-      background:#586cde;
-      border:2.5px solid rgba(255,255,255,0.85);
-      border-radius:6px;
+      width:44px;height:44px;
+      background:#7c3aed;
+      border:2.5px solid rgba(255,255,255,0.95);
+      border-radius:8px;
       display:flex;flex-direction:column;
       align-items:center;justify-content:center;
-      font-family:'Instrument Sans',system-ui,sans-serif;
-      box-shadow:0 4px 16px rgba(0,0,0,0.6);
+      font-family:'Space Grotesk',system-ui,sans-serif;
+      box-shadow:0 4px 20px rgba(124,58,237,0.4),0 2px 8px rgba(0,0,0,0.3);
       gap:1px;
     ">
-      <div style="font-size:7px;font-weight:700;color:rgba(255,255,255,0.65);letter-spacing:0.12em;line-height:1">FCP</div>
-      <div style="font-size:12px;font-weight:800;color:white;line-height:1;letter-spacing:-0.02em">${name}</div>
+      <div style="font-size:6px;font-weight:700;color:rgba(255,255,255,0.7);letter-spacing:0.12em;line-height:1;text-transform:uppercase">FCP</div>
+      <div style="font-size:13px;font-weight:700;color:white;line-height:1;letter-spacing:-0.02em">${name}</div>
     </div>`,
-    iconSize: [48, 48],
-    iconAnchor: [24, 24],
-    popupAnchor: [0, -28],
+    iconSize: [44, 44],
+    iconAnchor: [22, 22],
+    popupAnchor: [0, -26],
   });
 }
 
@@ -128,16 +192,13 @@ function MapCore({
     const el = containerRef.current;
     if (!el) return;
     if (mapInstanceRef.current) return;
-
     try { delete (el as HTMLElement & { _leaflet_id?: number })._leaflet_id; }
     catch { (el as HTMLElement & { _leaflet_id?: unknown })._leaflet_id = undefined; }
-
     const map = L.map(el, { scrollWheelZoom: true, zoomControl: true });
     map.setView(center, zoom);
     mapInstanceRef.current = map;
     onReady(map);
     setCtx(createLeafletContext(map));
-
     return () => {
       try { map.remove(); } catch { }
       mapInstanceRef.current = null;
@@ -157,63 +218,48 @@ function formatCoords(p: PhotoRecord): string {
   return `${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}`;
 }
 
-function NetworkPanel({ layers, photos, exceptionMode, onToggleException }: {
+function NetworkPanel({
+  layers, photos, trenchStats, qcMode, onToggleMode,
+}: {
   layers: GeoLayers;
   photos: PhotoRecord[];
-  exceptionMode: boolean;
-  onToggleException: () => void;
+  trenchStats: { complete: number; partial: number; missing: number; total: number };
+  qcMode: boolean;
+  onToggleMode: () => void;
 }) {
   const stats = useMemo(() => {
     const fcpCount = layers.fcps?.features.length ?? 0;
     let totalBuildings = 0;
-    let totalHomes = 0;
     for (const f of layers.fcps?.features ?? []) {
       totalBuildings += (f.properties?.countBuildings as number) ?? 0;
-      totalHomes += (f.properties?.countHomes as number) ?? 0;
     }
     let trenchLengthM = 0;
     for (const f of layers.trenches?.features ?? []) {
       trenchLengthM += (f.properties?.length as number) ?? 0;
     }
-    const clusterDesc = layers.siteCluster?.features[0]?.properties?.kmlDescriptionSimple ?? "";
-    const routeId = clusterDesc.split(",")[0]?.trim() ?? "CLP20417A";
-
-    const analysed = photos.filter((p) => p.analysis != null);
-    let cat1 = 0, cat2 = 0, cat3 = 0, cat4 = 0;
-    for (const p of photos) {
-      const c = markerColor(p);
-      if (c === CAT_COLORS.cat1) cat1++;
-      else if (c === CAT_COLORS.cat2) cat2++;
-      else if (c === CAT_COLORS.cat3) cat3++;
-      else if (c === CAT_COLORS.cat4) cat4++;
-    }
-    const noGps = photos.filter((p) => !p.hasGps).length;
-
     return {
       fcpCount,
       totalBuildings,
-      totalHomes,
       trenchLengthKm: (trenchLengthM / 1000).toFixed(1),
-      trenchSections: layers.trenches?.features.length ?? 0,
-      routeId,
       photoTotal: photos.length,
-      analysedTotal: analysed.length,
-      cat1, cat2, cat3, cat4, noGps,
+      analysedTotal: photos.filter((p) => p.analysis).length,
     };
   }, [layers, photos]);
+
+  const pct = (n: number) => trenchStats.total === 0 ? 0 : Math.round((n / trenchStats.total) * 100);
 
   return (
     <div className="map-network-panel">
       <div className="mnp-header">
         <div>
-          <div className="mnp-route">{stats.routeId}</div>
+          <div className="mnp-route">CLP20417A</div>
           <div className="mnp-subtitle">Maria Rain · Kärnten</div>
         </div>
         <button
-          className={`mnp-exception-btn ${exceptionMode ? "active" : ""}`}
-          onClick={onToggleException}
+          className={`mnp-mode-btn ${qcMode ? "qc" : ""}`}
+          onClick={onToggleMode}
         >
-          {exceptionMode ? "Exceptions only" : "All layers"}
+          {qcMode ? "QC Status" : "Trench Types"}
         </button>
       </div>
 
@@ -225,37 +271,58 @@ function NetworkPanel({ layers, photos, exceptionMode, onToggleException }: {
         <div className="mnp-divider" />
         <div className="mnp-stat">
           <div className="mnp-val">{stats.totalBuildings}</div>
-          <div className="mnp-key">Gebäude</div>
-        </div>
-        <div className="mnp-divider" />
-        <div className="mnp-stat">
-          <div className="mnp-val">{stats.totalHomes}</div>
-          <div className="mnp-key">Homes</div>
+          <div className="mnp-key">Buildings</div>
         </div>
         <div className="mnp-divider" />
         <div className="mnp-stat">
           <div className="mnp-val">{stats.trenchLengthKm}<span className="mnp-unit">km</span></div>
           <div className="mnp-key">Trench</div>
         </div>
+        <div className="mnp-divider" />
+        <div className="mnp-stat">
+          <div className="mnp-val">{stats.photoTotal}</div>
+          <div className="mnp-key">Photos</div>
+        </div>
       </div>
 
-      {stats.photoTotal > 0 && (
+      {trenchStats.total > 0 && (
         <div className="mnp-qc">
-          <div className="mnp-qc-label">Photo QC — {stats.photoTotal} uploaded · {stats.analysedTotal} analysed</div>
+          <div className="mnp-qc-label">Coverage by segment · {trenchStats.total} sections</div>
           <div className="mnp-qc-bar">
-            {stats.cat1 > 0 && <div style={{ background: CAT_COLORS.cat1, flex: stats.cat1 }} className="mnp-qc-seg" title={`Cat 1 Pass: ${stats.cat1}`} />}
-            {stats.cat2 > 0 && <div style={{ background: CAT_COLORS.cat2, flex: stats.cat2 }} className="mnp-qc-seg" title={`Cat 2 Partial: ${stats.cat2}`} />}
-            {stats.cat3 > 0 && <div style={{ background: CAT_COLORS.cat3, flex: stats.cat3 }} className="mnp-qc-seg" title={`Cat 3 Critical: ${stats.cat3}`} />}
-            {stats.cat4 > 0 && <div style={{ background: CAT_COLORS.cat4, flex: stats.cat4 }} className="mnp-qc-seg" title={`Cat 4 Suspect: ${stats.cat4}`} />}
-            {(stats.photoTotal - stats.cat1 - stats.cat2 - stats.cat3 - stats.cat4) > 0 && (
-              <div style={{ background: CAT_COLORS.pending, flex: stats.photoTotal - stats.cat1 - stats.cat2 - stats.cat3 - stats.cat4 }} className="mnp-qc-seg" />
+            {trenchStats.complete > 0 && (
+              <div
+                style={{ background: QC_COLORS.complete, flex: trenchStats.complete }}
+                className="mnp-qc-seg"
+                title={`Complete: ${trenchStats.complete}`}
+              />
+            )}
+            {trenchStats.partial > 0 && (
+              <div
+                style={{ background: QC_COLORS.partial, flex: trenchStats.partial }}
+                className="mnp-qc-seg"
+                title={`Partial: ${trenchStats.partial}`}
+              />
+            )}
+            {trenchStats.missing > 0 && (
+              <div
+                style={{ background: QC_COLORS.missing, flex: trenchStats.missing }}
+                className="mnp-qc-seg"
+                title={`Missing: ${trenchStats.missing}`}
+              />
             )}
           </div>
           <div className="mnp-qc-breakdown">
-            <span style={{ color: CAT_COLORS.cat1 }}>{stats.cat1} Pass</span>
-            <span style={{ color: CAT_COLORS.cat2 }}>{stats.cat2} Partial</span>
-            <span style={{ color: CAT_COLORS.cat3 }}>{stats.cat3} Critical</span>
-            {stats.noGps > 0 && <span style={{ color: CAT_COLORS.pending }}>{stats.noGps} No GPS</span>}
+            <span style={{ color: QC_COLORS.complete }}>{pct(trenchStats.complete)}% Complete</span>
+            <span style={{ color: QC_COLORS.partial }}>{pct(trenchStats.partial)}% Partial</span>
+            <span style={{ color: QC_COLORS.missing }}>{pct(trenchStats.missing)}% Missing</span>
+          </div>
+        </div>
+      )}
+
+      {trenchStats.total === 0 && stats.photoTotal === 0 && (
+        <div className="mnp-qc">
+          <div className="mnp-qc-label" style={{ color: "var(--text-muted)", fontStyle: "italic" }}>
+            Upload photos to see QC coverage
           </div>
         </div>
       )}
@@ -263,31 +330,51 @@ function NetworkPanel({ layers, photos, exceptionMode, onToggleException }: {
   );
 }
 
-function MapLegend() {
+function MapLegend({ qcMode }: { qcMode: boolean }) {
   return (
     <div className="map-legend-panel">
-      <div className="mlp-section-label">Trench Types</div>
-      {TRENCH_TYPES.map((t) => (
-        <div key={t.color} className="mlp-row">
-          <span className="mlp-line" style={{ background: t.color }} />
-          <span className="mlp-label">{t.label}</span>
-          <span className="mlp-pct">{t.pct}%</span>
-        </div>
-      ))}
+      {qcMode ? (
+        <>
+          <div className="mlp-section-label">Trench QC Status</div>
+          {(["complete", "partial", "missing"] as TrenchStatus[]).map((s) => (
+            <div key={s} className="mlp-row">
+              <span className="mlp-line" style={{ background: QC_COLORS[s] }} />
+              <div>
+                <div className="mlp-label" style={{ fontWeight: 600, color: QC_COLORS[s] }}>{QC_LABELS[s]}</div>
+                <div className="mlp-desc">{QC_DESC[s]}</div>
+              </div>
+            </div>
+          ))}
+          <div className="mlp-divider" />
+          <div className="mlp-section-label">Photo markers</div>
+          {[
+            { color: QC_COLORS.complete, label: "Pass · all checks" },
+            { color: QC_COLORS.partial,  label: "Partial · some fail" },
+            { color: QC_COLORS.missing,  label: "Critical / No GPS" },
+            { color: "#94a3b8",           label: "Pending analysis" },
+          ].map((item) => (
+            <div key={item.label} className="mlp-row">
+              <span className="mlp-dot" style={{ background: item.color }} />
+              <span className="mlp-label">{item.label}</span>
+            </div>
+          ))}
+        </>
+      ) : (
+        <>
+          <div className="mlp-section-label">Trench Types</div>
+          {TRENCH_TYPES.map((t) => (
+            <div key={t.color} className="mlp-row">
+              <span className="mlp-line" style={{ background: t.color }} />
+              <span className="mlp-label">{t.label}</span>
+            </div>
+          ))}
+        </>
+      )}
       <div className="mlp-divider" />
-      <div className="mlp-section-label">Photo QC</div>
-      {[
-        { color: CAT_COLORS.cat1, label: "Cat 1 · Pass" },
-        { color: CAT_COLORS.cat2, label: "Cat 2 · Partial" },
-        { color: CAT_COLORS.cat3, label: "Cat 3 · Critical" },
-        { color: CAT_COLORS.cat4, label: "Cat 4 · Suspect" },
-        { color: CAT_COLORS.pending, label: "Pending" },
-      ].map((item) => (
-        <div key={item.label} className="mlp-row">
-          <span className="mlp-dot" style={{ background: item.color }} />
-          <span className="mlp-label">{item.label}</span>
-        </div>
-      ))}
+      <div className="mlp-row">
+        <span style={{ width: 16, height: 16, background: "#7c3aed", borderRadius: 3, display: "inline-block", flexShrink: 0 }} />
+        <span className="mlp-label">FCP · distribution hub</span>
+      </div>
     </div>
   );
 }
@@ -298,7 +385,7 @@ export default function MapView() {
   const [loading, setLoading] = useState(true);
   const [panelOpen, setPanelOpen] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [exceptionMode, setExceptionMode] = useState(false);
+  const [qcMode, setQcMode] = useState(true);
   const mapRef = useRef<L.Map | null>(null);
 
   const handleMapReady = useCallback((map: L.Map) => { mapRef.current = map; }, []);
@@ -325,7 +412,10 @@ export default function MapView() {
       setLoading(false);
     }
     load();
-    return () => { cancelled = true; };
+    const poll = setInterval(() => {
+      fetch("/api/photos").then((r) => r.json()).then((d) => setPhotos(d.photos || [])).catch(() => {});
+    }, 5000);
+    return () => { cancelled = true; clearInterval(poll); };
   }, []);
 
   const geoPhotos = useMemo(
@@ -333,14 +423,39 @@ export default function MapView() {
     [photos],
   );
 
-  const visiblePhotos = useMemo(() => {
-    if (!exceptionMode) return photos;
-    return photos.filter((p) => !p.hasGps || (p.analysis as Record<string,unknown> | null)?.isDuplicate);
-  }, [photos, exceptionMode]);
+  const trenchStatusMap = useMemo(() => {
+    const map = new Map<string, TrenchStatus>();
+    if (!layers.trenches) return map;
+    for (const f of layers.trenches.features) {
+      if (f.geometry.type !== "LineString") continue;
+      const coords = f.geometry.coordinates as number[][];
+      const id = (f.properties?.externalID as string) ?? JSON.stringify(coords[0]);
+      map.set(id, computeStatus(coords, geoPhotos));
+    }
+    return map;
+  }, [layers.trenches, geoPhotos]);
 
-  const visibleGeoPhotos = useMemo(
-    () => visiblePhotos.filter((p) => p.hasGps && p.latitude != null && p.longitude != null),
-    [visiblePhotos],
+  const trenchStats = useMemo(() => {
+    let complete = 0, partial = 0, missing = 0;
+    for (const s of trenchStatusMap.values()) {
+      if (s === "complete") complete++;
+      else if (s === "partial") partial++;
+      else missing++;
+    }
+    return { complete, partial, missing, total: complete + partial + missing };
+  }, [trenchStatusMap]);
+
+  const makeTrenchStyle = useCallback(
+    (feature?: Feature<Geometry, GeoJsonProperties>): PathOptions => {
+      const base: PathOptions = { weight: 5, opacity: 0.9, lineCap: "round", lineJoin: "round" };
+      if (!qcMode) {
+        return { ...base, color: (feature?.properties?.fillColor as string) ?? "#3b82f6" };
+      }
+      const id = (feature?.properties?.externalID as string) ?? "";
+      const status = trenchStatusMap.get(id) ?? "missing";
+      return { ...base, color: QC_COLORS[status], weight: 4 };
+    },
+    [qcMode, trenchStatusMap],
   );
 
   const center: [number, number] = useMemo(() => {
@@ -360,12 +475,14 @@ export default function MapView() {
     return AUSTRIA_CENTER;
   }, [layers.siteCluster, geoPhotos]);
 
-  const zoom = layers.siteCluster ? 14 : geoPhotos.length > 0 ? 10 : 7;
+  const zoom = layers.siteCluster ? 14 : geoPhotos.length > 0 ? 12 : 7;
 
   function flyToPhoto(p: PhotoRecord) {
     if (p.latitude == null || p.longitude == null) return;
     mapRef.current?.flyTo([p.latitude, p.longitude], 17, { duration: 0.8 });
   }
+
+  const trenchKey = `trenches-${qcMode ? "qc" : "type"}-${trenchStatusMap.size}-${geoPhotos.length}`;
 
   if (loading) return <div className="empty">Loading map…</div>;
 
@@ -381,7 +498,7 @@ export default function MapView() {
           </LayersControl.BaseLayer>
           <LayersControl.BaseLayer name="Satellite">
             <TileLayer
-              attribution='&copy; Esri'
+              attribution="&copy; Esri"
               url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
             />
           </LayersControl.BaseLayer>
@@ -397,7 +514,9 @@ export default function MapView() {
               <GeoJSON
                 data={layers.siteCluster}
                 style={() => clusterStyle}
-                onEachFeature={(f, layer) => layer.bindPopup(propsTable(f.properties, ["kmlDescriptionSimple", "type", "externalID"]))}
+                onEachFeature={(f, layer) =>
+                  layer.bindPopup(propsTable(f.properties, ["kmlDescriptionSimple", "type", "externalID"]))
+                }
               />
             </LayersControl.Overlay>
           )}
@@ -407,7 +526,9 @@ export default function MapView() {
               <GeoJSON
                 data={layers.fcpPolygons}
                 style={fcpPolygonStyle}
-                onEachFeature={(f, layer) => layer.bindPopup(propsTable(f.properties, ["kmlDescriptionSimple", "externalID"]))}
+                onEachFeature={(f, layer) =>
+                  layer.bindPopup(propsTable(f.properties, ["kmlDescriptionSimple", "externalID"]))
+                }
               />
             </LayersControl.Overlay>
           )}
@@ -415,8 +536,9 @@ export default function MapView() {
           {layers.trenches && (
             <LayersControl.Overlay checked name={`Trenches (${layers.trenches.features.length})`}>
               <GeoJSON
+                key={trenchKey}
                 data={layers.trenches}
-                style={trenchStyle}
+                style={makeTrenchStyle}
                 onEachFeature={(f, layer) =>
                   layer.bindPopup(
                     propsTable(f.properties, ["masterItem", "executionState", "ductMainFull", "length", "ductType", "externalID"]),
@@ -432,7 +554,10 @@ export default function MapView() {
               <GeoJSON
                 data={layers.fcps}
                 pointToLayer={(feature, latlng) => {
-                  const name = (feature.properties?.fcpName as string) ?? (feature.properties?.name as string) ?? "FCP";
+                  const name =
+                    (feature.properties?.fcpName as string) ??
+                    (feature.properties?.name as string) ??
+                    "FCP";
                   return L.marker(latlng, { icon: makeFcpIcon(name), zIndexOffset: 500 });
                 }}
                 onEachFeature={(f, layer) =>
@@ -445,12 +570,12 @@ export default function MapView() {
             </LayersControl.Overlay>
           )}
 
-          <LayersControl.Overlay checked name={`Photos (${visibleGeoPhotos.length})`}>
+          <LayersControl.Overlay checked name={`Photos (${geoPhotos.length})`}>
             <GeoJSON
-              key={`photos-${visibleGeoPhotos.length}-${exceptionMode}`}
+              key={`photos-${geoPhotos.length}`}
               data={({
                 type: "FeatureCollection",
-                features: visibleGeoPhotos.map((p) => ({
+                features: geoPhotos.map((p) => ({
                   type: "Feature",
                   properties: {
                     id: p.id,
@@ -465,26 +590,26 @@ export default function MapView() {
                 })),
               }) as FeatureCollection}
               pointToLayer={(feature, latlng) => {
-                const color = (feature.properties?.color as string) ?? CAT_COLORS.pending;
+                const color = (feature.properties?.color as string) ?? "#94a3b8";
                 return L.circleMarker(latlng, {
-                  radius: 8,
-                  color: "rgba(0,0,0,0.5)",
-                  weight: 2,
+                  radius: 7,
+                  color: "rgba(255,255,255,0.9)",
+                  weight: 1.5,
                   fillColor: color,
-                  fillOpacity: 0.95,
+                  fillOpacity: 1,
                   zIndexOffset: 1000,
                 });
               }}
               onEachFeature={(f, layer) => {
                 const p = f.properties ?? {};
-                const color = (p.color as string) ?? CAT_COLORS.pending;
+                const color = (p.color as string) ?? "#94a3b8";
                 layer.bindPopup(
                   `<img src="/api/photos/${p.id}" class="popup-thumb" />
                    <div class="popup-name">${p.name}</div>
                    <div class="popup-meta">
                      <span style="color:${color};font-weight:700">${p.category}</span>
-                     ${p.project ? `<br/>Projekt: ${p.project}` : ""}
-                     ${p.lotId ? ` · Los: ${p.lotId}` : ""}
+                     ${p.project ? `<br/>Project: ${p.project}` : ""}
+                     ${p.lotId ? ` · Lot: ${p.lotId}` : ""}
                      ${p.takenAt ? `<br/>${new Date(p.takenAt).toLocaleString("de-AT")}` : ""}
                    </div>`,
                   { maxWidth: 240 },
@@ -499,29 +624,24 @@ export default function MapView() {
       <NetworkPanel
         layers={layers}
         photos={photos}
-        exceptionMode={exceptionMode}
-        onToggleException={() => setExceptionMode((v) => !v)}
+        trenchStats={trenchStats}
+        qcMode={qcMode}
+        onToggleMode={() => setQcMode((v) => !v)}
       />
 
-      <MapLegend />
+      <MapLegend qcMode={qcMode} />
 
       {photos.length > 0 && (
         <div className="photo-panel">
-          <button
-            className="photo-panel-toggle"
-            onClick={() => setPanelOpen((v) => !v)}
-          >
-            {panelOpen ? "Close" : `Photos (${visiblePhotos.length})`}
+          <button className="photo-panel-toggle" onClick={() => setPanelOpen((v) => !v)}>
+            {panelOpen ? "Close" : `Photos (${photos.length})`}
           </button>
-
           {panelOpen && (
             <div className="photo-panel-list">
               <div className="photo-panel-header">
-                <span className="photo-panel-header-title">
-                  {exceptionMode ? `Exceptions · ${visiblePhotos.length}` : `All photos · ${photos.length}`}
-                </span>
+                <span className="photo-panel-header-title">Photos · {photos.length}</span>
               </div>
-              {visiblePhotos.map((p) => (
+              {photos.map((p) => (
                 <div
                   key={p.id}
                   className={`photo-panel-item ${selectedId === p.id ? "selected" : ""} ${p.hasGps ? "has-gps" : ""}`}
@@ -541,12 +661,18 @@ export default function MapView() {
                       ) : (
                         <span className="ppbadge no-gps">No GPS</span>
                       )}
-                      {(p.analysis as Record<string,unknown> | null)?.isDuplicate && (
-                        <span className="ppbadge" style={{ color: "var(--cat4)", borderColor: "var(--cat4-border)", background: "var(--cat4-bg)" }}>Duplicate</span>
-                      )}
                     </div>
                   </div>
-                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: markerColor(p), flexShrink: 0, marginTop: 4 }} />
+                  <div
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: markerColor(p),
+                      flexShrink: 0,
+                      marginTop: 4,
+                    }}
+                  />
                 </div>
               ))}
             </div>
