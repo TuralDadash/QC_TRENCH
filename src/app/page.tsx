@@ -412,8 +412,8 @@ export default function FlowPage() {
             <span className="flow-step-num">01</span>
             <span className="flow-step-line" />
           </div>
-          <h1 className="page-title">AI quality control<br />for trench documentation.</h1>
-          <p className="subtitle">Upload field photos and get an instant compliance report — GPS matched, AI verified, audit ready.</p>
+          <h1 className="page-title">Trench documentation.<br />AI-verified.</h1>
+          <p className="subtitle">Upload site photos. The system checks GPS coordinates, depth measurement, sand bedding, warning tape — and flags every non-compliant section instantly.</p>
         </div>
 
         <div className="flow-inner">
@@ -596,8 +596,8 @@ export default function FlowPage() {
               <span className="flow-step-num">02</span>
               <span className="flow-step-line" />
             </div>
-            <h2 className="page-title">Coverage map.</h2>
-            <p className="subtitle">Every photo plotted on the construction site. Coverage gaps and high-risk segments visible at a glance.</p>
+            <h2 className="page-title">Network &amp; coverage.</h2>
+            <p className="subtitle">9 FCPs · 404 buildings · 19.6km of trench across CLP20417A. Photos pinned to the network, each dot colored by compliance status.</p>
           </div>
           <div className="flow-map-container">
             <MapView />
