@@ -6,8 +6,10 @@ import exifr from "exifr";
 import AdmZip from "adm-zip";
 import {
   PHOTOS_DIR,
+  analysisCoords,
   appendRecords,
   clearAll,
+  deriveAnalysis,
   loadIndex,
   type PhotoRecord,
 } from "@/lib/store";
@@ -31,7 +33,26 @@ export async function GET() {
   const sorted = [...records].sort((a, b) =>
     b.uploadedAt.localeCompare(a.uploadedAt),
   );
-  return Response.json({ photos: sorted });
+  // Attach the flattened analysis projection the redesigned UI consumes, and
+  // fall back to GPS the analysis read from the burnt-in overlay when
+  // upload-time EXIF/OCR found no coordinates.
+  const photos = sorted.map((r) => {
+    const analysis = deriveAnalysis(r);
+    if (r.latitude != null && r.longitude != null) {
+      return { ...r, analysis };
+    }
+    const c = analysisCoords(r);
+    if (!c) return { ...r, analysis };
+    return {
+      ...r,
+      analysis,
+      latitude: c.lat,
+      longitude: c.lon,
+      hasGps: true,
+      gpsSource: r.gpsSource ?? ("overlay" as const),
+    };
+  });
+  return Response.json({ photos });
 }
 
 export async function DELETE() {

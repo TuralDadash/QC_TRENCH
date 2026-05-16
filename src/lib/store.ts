@@ -111,11 +111,38 @@ export type PhotoRecord = {
   // Analysis runs keyed by path id ("util:v1.txt", "backend", ...). A photo
   // can be analysed by several paths; each result is kept for comparison.
   analyses?: Record<string, AnalysisRun>;
+  // Flattened analysis projection — populated on read by the /api/photos
+  // route, derived from `analyses`. Not stored in the database.
+  analysis?: PhotoAnalysis | null;
 };
 
 export type AnalysisRunUpdate = {
   id: string;
   run: AnalysisRun;
+};
+
+// Flattened, UI-facing projection of a photo's analysis. Derived on read from
+// the `analyses` map via deriveAnalysis() — never persisted. The redesigned
+// frontend consumes this shape; the underlying pipeline is untouched.
+export type PhotoAnalysis = {
+  trench: boolean;
+  trenchConf: number;
+  measuringStick: boolean;
+  measuringStickConf: number;
+  sandBedding: boolean;
+  sandBeddingConf: number;
+  warningTape: boolean;
+  warningTapeConf: number;
+  sideView: boolean;
+  sideViewConf: number;
+  addressSheet: boolean;
+  addressSheetConf: number;
+  addresses: string[];
+  isDuplicate: boolean;
+  duplicateOf: string | null;
+  gpsOnSite: boolean | null;
+  model: string;
+  analysedAt: string;
 };
 
 // Old single-analysis records (pre path-comparison) stored a flat `analysis`.
@@ -218,6 +245,15 @@ function rowToPhotoRecord(row: any): PhotoRecord {
   };
 }
 
+// Gemini sometimes returns an unparseable or partial datetime string. Coerce
+// it to a valid Date or null so an Invalid Date never reaches Postgres — it
+// would serialize to "0NaN-NaN-NaN..." and fail the timestamp cast (22007).
+function safeDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 // Extracts individual Gemini analysis fields for storage as dedicated columns.
 // Returns null values for all fields if the result is not a GeminiAnalysis.
 function extractGeminiFields(run: AnalysisRun): {
@@ -287,7 +323,7 @@ function extractGeminiFields(run: AnalysisRun): {
     address_present: g.address_present ?? null,
     address: g.address ?? null,
     datetime_present: g.datetime_present ?? null,
-    datetime: g.datetime ? new Date(g.datetime) : null,
+    datetime: safeDate(g.datetime),
   };
 }
 
@@ -548,7 +584,7 @@ export async function appendRecords(newOnes: PhotoRecord[]) {
           has_gps, has_exif, exif_field_count, exif_keys, timestamp_source,
           gps_source, overlay_app, overlay_latitude, overlay_longitude,
           overlay_address, overlay_taken_at, overlay_found, overlay_detected,
-          category, has_duplicate, duplicate_count
+          category, has_duplicate, duplicate_of_id
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
           $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
@@ -731,6 +767,94 @@ export async function mergeAnalysisRun(updates: AnalysisRunUpdate[]) {
 
 export function photoFilePath(filename: string) {
   return path.join(PHOTOS_DIR, filename);
+}
+
+// Collapses a photo's analysis runs into the flat PhotoAnalysis shape the
+// redesigned UI expects. Prefers a Gemini ("util") run, falls back to the
+// "backend" assessment. Returns null when the photo has no usable result.
+export function deriveAnalysis(rec: PhotoRecord): PhotoAnalysis | null {
+  const runs = Object.values(rec.analyses ?? {});
+  const run =
+    runs.find((r) => r.kind === "util" && r.result) ??
+    runs.find((r) => r.kind === "backend" && r.result) ??
+    null;
+  if (!run || !run.result) return null;
+
+  const isDuplicate = rec.hasDuplicate ?? false;
+  const duplicateOf = rec.duplicateOfId ?? null;
+  const analysedAt = run.analyzedAt ?? new Date().toISOString();
+
+  if (run.kind === "util") {
+    const g = run.result as GeminiAnalysis;
+    return {
+      trench: !!g.has_trench,
+      trenchConf: g.has_trench_confidence ?? 0,
+      measuringStick: !!g.has_vertical_measuring_stick,
+      measuringStickConf: g.has_vertical_measuring_stick_confidence ?? 0,
+      sandBedding: !!g.has_sand_bedding,
+      sandBeddingConf: g.has_sand_bedding_confidence ?? 0,
+      warningTape: !!g.has_tape,
+      warningTapeConf: g.has_tape_confidence ?? 0,
+      // The current analysis pipeline does not assess side-view framing;
+      // treat it as satisfied so it does not raise phantom deficiencies.
+      sideView: true,
+      sideViewConf: 0,
+      addressSheet: !!g.has_address_sheet,
+      addressSheetConf: g.has_address_sheet_confidence ?? 0,
+      addresses: Array.isArray(g.addresses) ? g.addresses : [],
+      isDuplicate,
+      duplicateOf,
+      gpsOnSite: null,
+      model: run.pathId,
+      analysedAt,
+    };
+  }
+
+  const a = run.result as BackendAssessment;
+  const pct = (c: number | undefined) => Math.round((c ?? 0) * 100);
+  return {
+    trench: !!a.duct?.visible,
+    trenchConf: pct(a.duct?.confidence),
+    measuringStick: !!a.depth?.ruler_visible,
+    measuringStickConf: pct(a.depth?.confidence),
+    sandBedding: a.sand_bedding?.status === "sand",
+    sandBeddingConf: pct(a.sand_bedding?.confidence),
+    warningTape: false,
+    warningTapeConf: 0,
+    sideView: true,
+    sideViewConf: 0,
+    addressSheet: !!a.address_label?.found,
+    addressSheetConf: pct(a.address_label?.confidence),
+    addresses: a.address_label?.text ? [a.address_label.text] : [],
+    isDuplicate,
+    duplicateOf,
+    gpsOnSite: null,
+    model: "backend",
+    analysedAt,
+  };
+}
+
+// GPS the analysis extracted from a photo's burnt-in overlay. Used as a
+// fallback when upload-time EXIF/OCR found no coordinates — the VLM often
+// reads the overlay successfully where tesseract OCR does not.
+export function analysisCoords(
+  rec: PhotoRecord,
+): { lat: number; lon: number } | null {
+  for (const run of Object.values(rec.analyses ?? {})) {
+    if (!run.result) continue;
+    if (run.kind === "util") {
+      const g = run.result as GeminiAnalysis;
+      if (g.gps_present && g.latitude != null && g.longitude != null) {
+        return { lat: g.latitude, lon: g.longitude };
+      }
+    } else {
+      const m = (run.result as BackendAssessment).burnt_in_metadata;
+      if (m && m.gps_lat != null && m.gps_lon != null) {
+        return { lat: m.gps_lat, lon: m.gps_lon };
+      }
+    }
+  }
+  return null;
 }
 
 export { PHOTOS_DIR, DATA_DIR };
