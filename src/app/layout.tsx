@@ -21,10 +21,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <UploadProvider>
-          <div className="shell">
-            <NavBar />
-            <main>{children}</main>
-          </div>
+          <NavBar />
+          <main>{children}</main>
         </UploadProvider>
       </body>
     </html>

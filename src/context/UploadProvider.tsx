@@ -27,7 +27,6 @@ export type Uploaded = {
   hasGps: boolean;
   hasExif: boolean;
   exifFieldCount: number;
-  exifKeys?: string[];
   timestampSource:
     | "exif"
     | "gps"

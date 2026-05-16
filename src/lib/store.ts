@@ -18,7 +18,6 @@ export type PhotoRecord = {
   hasGps: boolean;
   hasExif: boolean;
   exifFieldCount: number;
-  exifKeys?: string[];
   timestampSource: "exif" | "gps" | "filename" | "mtime" | "overlay" | null;
   gpsSource: "exif" | "overlay" | null;
   overlayApp: string | null;
