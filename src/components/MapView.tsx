@@ -597,7 +597,6 @@ export default function MapView() {
                   weight: 1.5,
                   fillColor: color,
                   fillOpacity: 1,
-                  zIndexOffset: 1000,
                 });
               }}
               onEachFeature={(f, layer) => {
