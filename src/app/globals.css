@@ -1,52 +1,46 @@
 @import "leaflet/dist/leaflet.css";
 
 :root {
-  --bg:               #f4f5f7;
-  --bg-alt:           #eceef2;
+  --bg:               #ffffff;
+  --bg-alt:           #f6f8fa;
   --surface:          #ffffff;
-  --surface-2:        #f0f1f4;
-  --glass:            rgba(255, 255, 255, 0.95);
-  --glass-border:     rgba(0, 0, 0, 0.07);
-  --border:           rgba(0, 0, 0, 0.08);
-  --border-strong:    rgba(0, 0, 0, 0.14);
+  --surface-2:        #f6f8fa;
+  --glass:            rgba(255, 255, 255, 0.97);
+  --glass-border:     #d1d9e0;
+  --border:           #d1d9e0;
+  --border-strong:    #818b98;
 
-  --text:             #0c1118;
-  --text-secondary:   #505868;
-  --text-muted:       #8a929e;
-  --text-dim:         #c4cad3;
+  --text:             #1f2328;
+  --text-secondary:   #59636e;
+  --text-muted:       #818b98;
+  --text-dim:         #d1d9e0;
 
-  --accent:           #0c1118;
+  --accent:           #1f2328;
   --accent-dark:      #000000;
-  --accent-light:     #1c2535;
-  --accent-glow:      rgba(12, 17, 24, 0.07);
-  --link:             #0c1118;
-  --link-hover:       #000000;
+  --accent-light:     #25292e;
+  --accent-glow:      rgba(31, 35, 40, 0.06);
+  --link:             #0969da;
+  --link-hover:       #0550ae;
 
-  --ok:               #22c55e;
-  --ok-dark:          #16a34a;
-  --ok-bg:            rgba(34, 197, 94, 0.1);
-  --ok-border:        rgba(34, 197, 94, 0.2);
+  --ok:               #1a7f37;
+  --ok-dark:          #116329;
+  --ok-bg:            rgba(26, 127, 55, 0.08);
+  --ok-border:        rgba(26, 127, 55, 0.2);
 
-  --warn:             #f59e0b;
-  --warn-badge:       #f59e0b;
-  --warn-bg:          rgba(245, 158, 11, 0.1);
-  --warn-border:      rgba(245, 158, 11, 0.2);
+  --warn:             #9a6700;
+  --warn-badge:       #9a6700;
+  --warn-bg:          rgba(154, 103, 0, 0.08);
+  --warn-border:      rgba(154, 103, 0, 0.2);
 
-  --err:              #ef4444;
-  --err-bg:           rgba(239, 68, 68, 0.1);
-  --err-border:       rgba(239, 68, 68, 0.2);
+  --err:              #d1242f;
+  --err-bg:           rgba(209, 36, 47, 0.08);
+  --err-border:       rgba(209, 36, 47, 0.2);
 
-  --cat4:             #a855f7;
-  --cat4-bg:          rgba(168, 85, 247, 0.1);
-  --cat4-border:      rgba(168, 85, 247, 0.2);
+  --cat4:             #8250df;
+  --cat4-bg:          rgba(130, 80, 223, 0.08);
+  --cat4-border:      rgba(130, 80, 223, 0.2);
 
-  --gps:              #22c55e;
-
-
-  --shadow-xs:        0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-sm:        0 1px 3px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md:        0 4px 12px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.3);
-  --shadow-lg:        0 12px 32px rgba(0, 0, 0, 0.6), 0 4px 8px rgba(0, 0, 0, 0.35);
+  --gps:              #1a7f37;
 
   --radius-sm:        4px;
   --radius-md:        8px;
@@ -1682,6 +1676,26 @@ main {
   border-color: rgba(255, 255, 255, 0.22);
   color: rgba(255, 255, 255, 0.95);
 }
+
+[data-reveal] {
+  opacity: 0;
+  transform: translateY(30px);
+  transition:
+    opacity 0.72s var(--ease-out-soft),
+    transform 0.72s var(--ease-out-soft);
+  will-change: opacity, transform;
+}
+
+[data-reveal].in {
+  opacity: 1;
+  transform: none;
+}
+
+[data-reveal][data-d="1"] { transition-delay: 90ms; }
+[data-reveal][data-d="2"] { transition-delay: 180ms; }
+[data-reveal][data-d="3"] { transition-delay: 270ms; }
+[data-reveal][data-d="4"] { transition-delay: 360ms; }
+[data-reveal][data-d="5"] { transition-delay: 450ms; }
 
 @media print {
   body { background: white; color: black; }

@@ -294,6 +294,31 @@ export default function FlowPage() {
   const showReport = analysedCount > 0;
   const mapLocked = !showMap;
   const reportLocked = !showReport;
+  const hasPhotos = uploadedPhotos.length > 0;
+  const hasAnalysis = analysedCount > 0;
+
+  useEffect(() => {
+    let io: IntersectionObserver;
+    const rafId = requestAnimationFrame(() => {
+      const els = document.querySelectorAll<Element>("[data-reveal]");
+      io = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) {
+            if (e.isIntersecting) {
+              e.target.classList.add("in");
+              io.unobserve(e.target);
+            }
+          }
+        },
+        { threshold: 0.08, rootMargin: "0px 0px -32px 0px" },
+      );
+      els.forEach((el) => io.observe(el));
+    });
+    return () => {
+      cancelAnimationFrame(rafId);
+      io?.disconnect();
+    };
+  }, [hasPhotos, hasAnalysis]);
 
   useEffect(() => {
     if (phase.kind === "complete") {
@@ -413,13 +438,13 @@ export default function FlowPage() {
       <section id="upload" className="flow-section">
         <div className="upload-layout">
           <div className="flow-inner">
-            <span className="section-tag">Upload</span>
-            <h1 className="page-title">Trench documentation.<br />AI-verified.</h1>
-            <p className="subtitle">Upload site photos. The system checks GPS coordinates, depth measurement, sand bedding, warning tape — and flags every non-compliant section instantly.</p>
+            <span className="section-tag" data-reveal>Upload</span>
+            <h1 className="page-title" data-reveal data-d="1">Trench documentation.<br />AI-verified.</h1>
+            <p className="subtitle" data-reveal data-d="2">Upload site photos. The system checks GPS coordinates, depth measurement, sand bedding, warning tape — and flags every non-compliant section instantly.</p>
           </div>
 
           <div className="flow-inner">
-          <div className="upload-form-card">
+          <div className="upload-form-card" data-reveal data-d="2">
 
           {phase.kind !== "idle" && (
             <div className="upload-phases">
@@ -595,11 +620,11 @@ export default function FlowPage() {
       <section id="map" ref={mapSectionRef as React.RefObject<HTMLElement>} className="flow-section">
         <div className={`section-content${mapLocked ? " section-blurred" : ""}`}>
           <div className="flow-inner">
-            <span className="section-tag">Coverage Map</span>
-            <h2 className="page-title">Network &amp; coverage.</h2>
-            <p className="subtitle">9 FCPs · 404 buildings · 19.6 km of trench across CLP20417A. Each photo pinned to the network, colored by compliance category.</p>
+            <span className="section-tag" data-reveal>Coverage Map</span>
+            <h2 className="page-title" data-reveal data-d="1">Network &amp; coverage.</h2>
+            <p className="subtitle" data-reveal data-d="2">9 FCPs · 404 buildings · 19.6 km of trench across CLP20417A. Each photo pinned to the network, colored by compliance category.</p>
           </div>
-          <div className="flow-map-container">
+          <div className="flow-map-container" data-reveal data-d="3">
             <MapView />
             <button className="map-expand-btn" onClick={() => setMapExpanded(true)}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -622,8 +647,8 @@ export default function FlowPage() {
       <section id="report" ref={reportSectionRef as React.RefObject<HTMLElement>} className="flow-section">
         <div className={`section-content${reportLocked ? " section-blurred" : ""}`}>
         <div className="flow-inner">
-            <span className="section-tag">Deficiency Report</span>
-            <div className="report-header">
+            <span className="section-tag" data-reveal>Deficiency Report</span>
+            <div className="report-header" data-reveal data-d="1">
               <div>
                 <h2 className="page-title">Deficiency report.</h2>
                 <p className="subtitle">
@@ -650,7 +675,7 @@ export default function FlowPage() {
               </div>
             </div>
 
-            <div className="filter-chips">
+            <div className="filter-chips" data-reveal data-d="2">
               {([
                 { id: "all", label: `All (${photos.length})`, cls: "" },
                 { id: "failed", label: `Failed (${totalFailed})`, cls: "err" },
