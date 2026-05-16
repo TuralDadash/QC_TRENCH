@@ -187,6 +187,18 @@ def _compare_clusterings(photos: list[dict]) -> dict:
     }
 
 
-def to_pdf(result: dict, path: Path) -> None:
-    """Render the JSON result to a PDF report. Stub — see improvements.md."""
-    raise NotImplementedError("PDF export is planned post-hackathon. Use to_json for now.")
+def to_pdf(
+    db_data: dict,
+    path: Path,
+    *,
+    meta: dict | None = None,
+    length_m: float | None = None,
+    cat4_overrides: dict | None = None,
+) -> None:
+    """Render a customer PDF report from `app.db.fetch_report_data` output.
+
+    Cover-block + trench length + Cat-4 sub-reasons not yet in DB come from
+    the caller (see `app.main` /api/report/pdf endpoint).
+    """
+    from app.pdf_render import build_pdf
+    build_pdf(path, db_data, meta=meta, length_m=length_m, cat4_overrides=cat4_overrides)
