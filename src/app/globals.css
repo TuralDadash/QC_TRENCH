@@ -265,7 +265,6 @@ main {
   font-family: inherit;
   padding: 7px 14px;
   cursor: pointer;
-  box-shadow: var(--shadow-sm);
   transition:
     background 0.18s var(--ease-out-soft),
     color 0.18s var(--ease-out-soft);
@@ -288,7 +287,6 @@ main {
   -webkit-backdrop-filter: blur(20px);
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.06);
   animation: fade-slide-up 0.3s var(--ease-out-soft);
 }
 
@@ -380,7 +378,7 @@ main {
   padding: 14px 16px;
   min-width: 300px;
   max-width: 340px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+
   animation: fade-slide-down 0.4s var(--ease-out-soft);
 }
 
@@ -520,7 +518,7 @@ main {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   padding: 12px 14px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+
   pointer-events: none;
   min-width: 180px;
 }
@@ -709,7 +707,6 @@ main {
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   padding: 32px 36px;
-  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .seg {
@@ -742,7 +739,6 @@ main {
 .seg-btn.active {
   background: var(--surface-2);
   color: var(--accent-light);
-  box-shadow: var(--shadow-xs);
   font-weight: 600;
 }
 
@@ -926,7 +922,6 @@ main {
 
 .btn:hover {
   background: var(--accent-dark);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
   transform: translateY(-1px);
 }
 
@@ -1010,7 +1005,6 @@ main {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   font-size: 12px;
-  box-shadow: var(--shadow-xs);
   animation: fade-slide-up 0.3s var(--ease-out-soft);
 }
 
@@ -1028,7 +1022,6 @@ main {
   background: var(--surface);
   border-radius: var(--radius-lg);
   overflow: hidden;
-  box-shadow: var(--shadow-xs);
 }
 
 .results th {
@@ -1120,7 +1113,6 @@ main {
   border-radius: var(--radius-lg);
   padding: 20px 28px;
   min-width: 110px;
-  box-shadow: var(--shadow-sm);
   animation: rise-in 0.4s var(--ease-out-soft);
 }
 
@@ -1212,17 +1204,15 @@ main {
   border-radius: var(--radius-lg);
   margin-bottom: 8px;
   overflow: hidden;
-  box-shadow: var(--shadow-xs);
   transition:
     border-color 0.2s var(--ease-out-soft),
-    box-shadow 0.2s var(--ease-out-soft);
   animation: fade-slide-up 0.32s var(--ease-out-soft);
 }
 
 .lot-card.has-issues  { border-color: var(--err-border); }
-.lot-card.has-issues:hover { box-shadow: 0 4px 14px rgba(239, 68, 68, 0.12); }
+.lot-card.has-issues:hover { }
 .lot-card.cat4 { border-color: var(--cat4-border); }
-.lot-card:hover { box-shadow: var(--shadow-md); }
+.lot-card:hover { }
 
 .lot-header {
   display: flex;
@@ -1484,7 +1474,6 @@ main {
   width: 100%;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: var(--shadow-lg);
 }
 
 .modal-close {
@@ -1592,7 +1581,6 @@ main {
   color: var(--text-muted);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
 }
