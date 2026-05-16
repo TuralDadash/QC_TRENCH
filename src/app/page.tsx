@@ -288,6 +288,8 @@ export default function FlowPage() {
   const showMap = photos.length > 0 || uploadedPhotos.length > 0 || phase.kind !== "idle";
   const analysedCount = photos.filter((p) => p.analysis).length;
   const showReport = analysedCount > 0;
+  const mapLocked = !showMap;
+  const reportLocked = !showReport;
 
   useEffect(() => {
     if (phase.kind === "complete") {
@@ -587,8 +589,8 @@ export default function FlowPage() {
         </div>
       </section>
 
-      {showMap && (
-        <section id="map" ref={mapSectionRef as React.RefObject<HTMLElement>} className="flow-section flow-reveal">
+      <section id="map" ref={mapSectionRef as React.RefObject<HTMLElement>} className="flow-section">
+        <div className={`section-content${mapLocked ? " section-blurred" : ""}`}>
           <div className="flow-inner">
             <div className="flow-step-label">
               <span className="flow-step-num">02</span>
@@ -600,12 +602,17 @@ export default function FlowPage() {
           <div className="flow-map-container">
             <MapView />
           </div>
-        </section>
-      )}
+        </div>
+        {mapLocked && (
+          <div className="lock-overlay">
+            <div className="lock-badge">Upload photos to unlock the coverage map</div>
+          </div>
+        )}
+      </section>
 
-      {showReport && (
-        <section id="report" ref={reportSectionRef as React.RefObject<HTMLElement>} className="flow-section flow-reveal">
-          <div className="flow-inner">
+      <section id="report" ref={reportSectionRef as React.RefObject<HTMLElement>} className="flow-section">
+        <div className={`section-content${reportLocked ? " section-blurred" : ""}`}>
+        <div className="flow-inner">
             <div className="flow-step-label">
               <span className="flow-step-num">03</span>
               <span className="flow-step-line" />
@@ -727,8 +734,13 @@ export default function FlowPage() {
               );
             })}
           </div>
-        </section>
-      )}
+        </div>
+        {reportLocked && (
+          <div className="lock-overlay">
+            <div className="lock-badge">AI analysis results will appear here</div>
+          </div>
+        )}
+      </section>
 
       {preview && (
         <div className="modal-backdrop" onClick={() => setPreviewId(null)}>

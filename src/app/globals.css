@@ -1,11 +1,11 @@
 @import "leaflet/dist/leaflet.css";
 
 :root {
-  --bg:               #0c0e14;
-  --bg-alt:           #131620;
-  --surface:          #141821;
-  --surface-2:        #1a1e2c;
-  --glass:            rgba(18, 22, 33, 0.94);
+  --bg:               #080a0e;
+  --bg-alt:           #0d1016;
+  --surface:          #0f1218;
+  --surface-2:        #141920;
+  --glass:            rgba(10, 14, 22, 0.96);
   --glass-border:     rgba(255, 255, 255, 0.07);
   --border:           rgba(255, 255, 255, 0.07);
   --border-strong:    rgba(255, 255, 255, 0.13);
@@ -107,13 +107,15 @@ main {
 }
 
 .flow-section {
-  padding: 80px 0 96px;
+  padding: 100px 0 80px;
   border-top: 1px solid var(--border);
+  min-height: 100vh;
+  position: relative;
 }
 
 .flow-section:first-child {
   border-top: none;
-  padding-top: 88px;
+  padding-top: 100px;
 }
 
 .flow-inner {
@@ -126,7 +128,7 @@ main {
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-bottom: 24px;
+  margin-bottom: 32px;
 }
 
 .flow-step-num {
@@ -718,20 +720,21 @@ main {
 }
 
 .page-title {
-  margin: 0 0 10px;
-  font-size: 38px;
+  margin: 0 0 20px;
+  font-size: 64px;
   font-weight: 800;
   color: var(--text);
-  letter-spacing: -0.04em;
-  line-height: 1.05;
+  letter-spacing: -0.05em;
+  line-height: 0.94;
 }
 
 .subtitle {
   color: var(--text-muted);
-  font-size: 15px;
-  margin: 0 0 36px;
-  line-height: 1.65;
-  max-width: 560px;
+  font-size: 16px;
+  margin: 0 0 52px;
+  line-height: 1.6;
+  max-width: 480px;
+  font-weight: 400;
 }
 
 .upload-form-card {
@@ -1594,6 +1597,43 @@ main {
 @keyframes rise-in {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+.section-content {
+  transition:
+    filter 1s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 1s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.section-blurred {
+  filter: blur(18px);
+  opacity: 0.22;
+  pointer-events: none;
+  user-select: none;
+}
+
+.lock-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.lock-badge {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  padding: 14px 28px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.01em;
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
 @media print {
