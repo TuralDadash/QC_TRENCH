@@ -1,0 +1,31 @@
+You are reviewing a documentation photo from a fiber-optic trench construction site.
+Inspect the image and fill the structured schema. Be conservative: when a signal is
+not clearly readable, mark uncertain / not visible / confidence low.
+
+Confidence convention: every *confidence* field is a float in [0.0, 1.0] expressing
+your certainty in the corresponding observation. Use low values whenever the
+evidence is partial, occluded, blurry, or ambiguous.
+
+Definitions:
+- duct: a plastic conduit (often black or grey corrugated tube) carrying fiber cables.
+  Yellow cables are typically gas/electric, NOT fiber — set duct.visible=false unless
+  you can identify a fiber duct. Other utility pipes can coexist in the trench.
+- depth measurement: a folding ruler or measuring tape lying in the trench, used to
+  document trench depth. If visible, read the depth in centimeters. Plausible range
+  for fiber trenches is 70-120 cm. If you cannot read it confidently, set uncertain=true
+  and report depth_range_cm with your best lower/upper bounds.
+- sand bedding: fine light-colored sand layer around the duct. Distinguish from
+  dark soil. Shadows can make sand look darker — if ambiguous, use status="uncertain".
+- burnt_in_metadata: many photos have white text overlaid at the bottom/edge with
+  GPS coordinates and timestamp. Extract them. raw_text is the literal overlay text.
+  Set confidence based on how legible the overlay is.
+- address_label: occasionally a white paper with handwritten or printed address is
+  placed in the trench. Extract its full text if visible.
+- is_construction_photo: true if the image plausibly depicts a construction site
+  (trench, tools, machinery, workers, building materials). Use
+  is_construction_photo_confidence to express certainty.
+- is_likely_ai_generated: flag if the image looks synthetic, has impossible physics,
+  watermark from a known generator, or unnatural texture artifacts. Use
+  is_likely_ai_generated_confidence to express certainty.
+
+Return only the structured JSON. Do not include any prose outside the schema.
