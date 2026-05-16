@@ -110,7 +110,7 @@ type LotSummary = {
   analysed: number;
   duplicates: number;
   criteria: Record<CriterionKey, number>;
-  passAll: number;
+  cat1Count: number;
   worstCat: Category;
   photos: Photo[];
 };
@@ -125,7 +125,7 @@ function buildReport(photos: Photo[]): LotSummary[] {
       map.set(key, {
         lotId, project, total: 0, withGps: 0, analysed: 0, duplicates: 0,
         criteria: { trench: 0, measuringStick: 0, sandBedding: 0, warningTape: 0, sideView: 0 },
-        passAll: 0, worstCat: 1, photos: [],
+        cat1Count: 0, worstCat: 1, photos: [],
       });
     }
     const s = map.get(key)!;
@@ -136,7 +136,8 @@ function buildReport(photos: Photo[]): LotSummary[] {
       s.analysed++;
       if (p.analysis.isDuplicate) s.duplicates++;
       for (const c of CRITERIA) { if (p.analysis[c.key]) s.criteria[c.key]++; }
-      if (CRITERIA.every((c) => p.analysis![c.key])) s.passAll++;
+      const cat = deriveCategory(p);
+      if (cat === 1) s.cat1Count++;
     }
     const cat = deriveCategory(p);
     if (cat > s.worstCat) s.worstCat = cat;
@@ -445,7 +446,8 @@ export default function FlowPage() {
   const preview = previewId ? uploadedPhotos.find((r) => r.id === previewId) ?? null : null;
 
   const lots = buildReport(photos);
-  const totalPassAll = photos.filter((p) => p.analysis && CRITERIA.every((c) => p.analysis![c.key])).length;
+  const totalCat1 = photos.filter((p) => p.analysis && deriveCategory(p) === 1).length;
+  const totalCat2 = photos.filter((p) => p.analysis && deriveCategory(p) === 2).length;
   const totalFailed = photos.filter((p) => { const cat = deriveCategory(p); return cat === 3 || cat === 4; }).length;
   const totalDups = photos.filter((p) => p.analysis?.isDuplicate).length;
   const totalNoGps = photos.filter((p) => !p.hasGps).length;
@@ -816,11 +818,11 @@ export default function FlowPage() {
             </div>
             <div className="report-kpi-row" data-reveal data-d="1">
               <div className="report-kpi-card ok">
-                <div className="report-kpi-num">{totalPassAll}</div>
+                <div className="report-kpi-num">{totalCat1}</div>
                 <div className="report-kpi-label">Cat 1 · Duct + Depth</div>
               </div>
               <div className="report-kpi-card warn">
-                <div className="report-kpi-num">{Math.max(0, analysedCount - totalPassAll - totalFailed)}</div>
+                <div className="report-kpi-num">{totalCat2}</div>
                 <div className="report-kpi-label">Cat 2 · Duct only</div>
               </div>
               <div className="report-kpi-card err">
@@ -870,7 +872,7 @@ export default function FlowPage() {
                       <span className="lot-stat">{lot.total} photo{lot.total === 1 ? "" : "s"}</span>
                       <span className={`lot-stat ${lot.withGps === lot.total ? "ok" : "warn"}`}>{lot.withGps}/{lot.total} GPS</span>
                       {lot.analysed > 0 && (
-                        <span className={`lot-stat ${lot.passAll === lot.analysed ? "ok" : "err"}`}>{lot.passAll}/{lot.analysed} pass all</span>
+                        <span className={`lot-stat ${lot.cat1Count === lot.analysed ? "ok" : "err"}`}>{lot.cat1Count}/{lot.analysed} Cat 1</span>
                       )}
                       {lot.duplicates > 0 && <span className="lot-stat err">{lot.duplicates} dup</span>}
                     </div>

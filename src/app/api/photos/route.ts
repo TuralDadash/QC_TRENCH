@@ -107,7 +107,6 @@ async function processImage(opts: {
     // the file; we only pull coords + timestamp + dimensions out of it.
     meta = (await exifr.parse(buf, {
       tiff: true,
-      ifd0: true,
       exif: true,
       gps: true,
       ihdr: true,
