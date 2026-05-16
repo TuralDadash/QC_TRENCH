@@ -12,9 +12,9 @@ export const runtime = "nodejs";
 // committed.
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const id = params.id;
+  const { id } = await params;
   let filename: string | undefined;
   try {
     const entries = await fs.readdir(PHOTOS_DIR);
