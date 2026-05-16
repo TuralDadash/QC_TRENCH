@@ -1,10 +1,10 @@
 @import "leaflet/dist/leaflet.css";
 
 :root {
-  --bg:               #f6f5f2;
-  --bg-alt:           #edece8;
+  --bg:               #f4f5f7;
+  --bg-alt:           #eceef2;
   --surface:          #ffffff;
-  --surface-2:        #f2f1ee;
+  --surface-2:        #f0f1f4;
   --glass:            rgba(255, 255, 255, 0.95);
   --glass-border:     rgba(0, 0, 0, 0.07);
   --border:           rgba(0, 0, 0, 0.08);
@@ -281,14 +281,14 @@ main {
   width: 296px;
   max-height: calc(100vh - 160px);
   overflow-y: auto;
-  background: rgba(8, 11, 20, 0.88);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid rgba(0, 0, 0, 0.09);
   border-radius: var(--radius-xl);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255,255,255,0.06);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.06);
   animation: fade-slide-up 0.3s var(--ease-out-soft);
 }
 
@@ -372,15 +372,15 @@ main {
   top: 14px;
   left: 14px;
   z-index: 1000;
-  background: rgba(10, 14, 22, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid rgba(0, 0, 0, 0.09);
   border-radius: var(--radius-lg);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   padding: 14px 16px;
   min-width: 300px;
   max-width: 340px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
   animation: fade-slide-down 0.4s var(--ease-out-soft);
 }
 
@@ -514,13 +514,13 @@ main {
   bottom: 60px;
   left: 14px;
   z-index: 1000;
-  background: rgba(10, 14, 22, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid rgba(0, 0, 0, 0.09);
   border-radius: var(--radius-lg);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   padding: 12px 14px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
   pointer-events: none;
   min-width: 180px;
 }

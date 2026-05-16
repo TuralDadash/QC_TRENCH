@@ -12,10 +12,21 @@ import {
   type PhotoRecord,
 } from "@/lib/store";
 import { extractOverlay } from "@/lib/overlayOcr";
+import { analyseImage } from "@/lib/analyse";
 
 export const runtime = "nodejs";
 
 const IMAGE_EXT_RE = /\.(jpe?g|png|webp|heic|heif|tiff?)$/i;
+
+const MIME_MAP: Record<string, string> = {
+  ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+  ".png": "image/png", ".webp": "image/webp",
+  ".heic": "image/heic", ".heif": "image/heif",
+  ".tif": "image/tiff", ".tiff": "image/tiff",
+};
+function getMimeType(filename: string): string {
+  return MIME_MAP[path.extname(filename).toLowerCase()] ?? "image/jpeg";
+}
 
 const OCR_CONCURRENCY = Math.max(
   1,
@@ -327,6 +338,15 @@ export async function POST(req: NextRequest) {
         droppedByLimit,
       });
 
+      const existingRecords = await loadIndex();
+      const existingHashes = new Map<string, string>();
+      for (const r of existingRecords) {
+        if (r.fileHash) existingHashes.set(r.fileHash, r.id);
+      }
+      const jobHashes = jobs.map((j) =>
+        crypto.createHash("sha256").update(j.buf).digest("hex")
+      );
+
       const records: PhotoRecord[] = [];
       let nextIndex = 0;
       let done = 0;
@@ -336,7 +356,16 @@ export async function POST(req: NextRequest) {
           while (true) {
             const i = nextIndex++;
             if (i >= jobs.length) break;
+            const hash = jobHashes[i];
             const rec = await processImage(jobs[i]);
+            rec.fileHash = hash;
+            rec.analysis = await analyseImage(
+              jobs[i].buf,
+              getMimeType(rec.filename),
+              existingHashes,
+              hash,
+            ).catch(() => null);
+            existingHashes.set(hash, rec.id);
             records.push(rec);
             done++;
             write({
