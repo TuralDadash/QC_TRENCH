@@ -27,7 +27,6 @@ export type Uploaded = {
   hasGps: boolean;
   hasExif: boolean;
   exifFieldCount: number;
-  exifKeys?: string[];
   timestampSource:
     | "exif"
     | "gps"
@@ -103,7 +102,6 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       const d = await r.json();
       setResults(d.photos || []);
     } catch {
-      /* ignore */
     }
   }, []);
 
@@ -123,7 +121,6 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       opts: { project?: string; lotId?: string; limit?: number | null },
     ) => {
       if (files.length === 0) return;
-      // Don't start a second upload while one is in-flight.
       if (xhrRef.current) return;
 
       setPhase({ kind: "uploading", pct: 0 });
@@ -218,7 +215,6 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         } else if (ev.event === "done") {
           setSkipped(ev.skipped || []);
         } else if (ev.event === "error") {
-          // surface as a console warn; the phase will go back to idle below
           console.warn("upload error:", ev.message);
         }
       };
@@ -227,8 +223,6 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       xhr.upload.addEventListener("progress", (e) => {
         if (!e.lengthComputable) return;
         const pct = e.loaded / e.total;
-        // Only update during the upload phase — once the server starts
-        // emitting "preparing" or beyond, we don't want to clobber it.
         setPhase((p) =>
           p.kind === "uploading" ? { kind: "uploading", pct } : p,
         );

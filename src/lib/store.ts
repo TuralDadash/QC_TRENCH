@@ -18,7 +18,6 @@ export type PhotoRecord = {
   hasGps: boolean;
   hasExif: boolean;
   exifFieldCount: number;
-  exifKeys?: string[];
   timestampSource: "exif" | "gps" | "filename" | "mtime" | "overlay" | null;
   gpsSource: "exif" | "overlay" | null;
   overlayApp: string | null;
@@ -28,6 +27,29 @@ export type PhotoRecord = {
   overlayTakenAt: string | null;
   overlayFound: boolean;
   overlayDetected: boolean;
+  fileHash?: string | null;
+  analysis?: PhotoAnalysis | null;
+};
+
+export type PhotoAnalysis = {
+  trench: boolean;
+  trenchConf: number;
+  measuringStick: boolean;
+  measuringStickConf: number;
+  sandBedding: boolean;
+  sandBeddingConf: number;
+  warningTape: boolean;
+  warningTapeConf: number;
+  sideView: boolean;
+  sideViewConf: number;
+  addressSheet: boolean;
+  addressSheetConf: number;
+  addresses: string[];
+  isDuplicate: boolean;
+  duplicateOf: string | null;
+  gpsOnSite: boolean | null;
+  model: string;
+  analysedAt: string;
 };
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
@@ -56,8 +78,6 @@ export async function saveIndex(records: PhotoRecord[]) {
 
 export async function clearAll() {
   await ensureDirs();
-  // Empty the photos directory wholesale (in case earlier wipes left orphans
-  // not referenced by the current index).
   const entries = await fs.readdir(PHOTOS_DIR).catch(() => [] as string[]);
   await Promise.all(
     entries.map((name) =>

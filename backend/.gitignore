@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# Conda
+.conda/
+
+# FastAPI / local runtime
+uploads/
+reports/
+*.log
+
+# IDEs
+.vscode/
+.idea/
+.claude/
+
+# macOS
+.DS_Store
+
+# Node / frontend tooling, if added later
+node_modules/
+dist/
+build/
+
+# Local notebooks or experiments
+.ipynb_checkpoints/
+
+# Local-only working docs (kept on disk, not committed)
+architecture.md
+improvements.md
+next_steps.md
+overview.md
+results/

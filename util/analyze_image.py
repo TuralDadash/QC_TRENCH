@@ -24,8 +24,6 @@ class TrenchAnalysis(BaseModel):
     addresses: list[str]
     has_sand_bedding: bool
     has_sand_bedding_confidence: int
-    depth_cm: int | None
-    depth_cm_confidence: int
 
 
 def guess_mime_type(path: Path) -> str:

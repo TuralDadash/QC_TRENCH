@@ -9,44 +9,45 @@ export default function UploadStatusBadge() {
 
   let pct = 0;
   let label = "";
+  const indeterminate = phase.kind === "preparing" && !phase.extracting;
+
   if (phase.kind === "uploading") {
     pct = phase.pct * 100;
-    label = `Uploading ${Math.round(pct)}%`;
+    label = `${Math.round(pct)}%`;
   } else if (phase.kind === "preparing") {
     if (phase.extracting && phase.extracting.total > 0) {
       pct = (phase.extracting.done / phase.extracting.total) * 100;
-      label = `Extracting ${phase.extracting.done}/${phase.extracting.total}`;
+      label = `${phase.extracting.done}/${phase.extracting.total}`;
     } else {
-      pct = 0;
-      label = phase.message;
+      label = "...";
     }
   } else if (phase.kind === "processing") {
     pct = phase.total > 0 ? (phase.done / phase.total) * 100 : 0;
     const eta = formatEta(phase.etaMs);
-    label = `Processing ${phase.done}/${phase.total}${eta ? " · " + eta : ""}`;
+    label = eta || `${phase.done}/${phase.total}`;
   } else if (phase.kind === "complete") {
     pct = 100;
-    label = "Complete";
+    label = "done";
   }
 
-  const isIndeterminate =
-    phase.kind === "preparing" && !phase.extracting;
-
   return (
-    <Link href="/upload" className="topbar-progress" title="Go to upload page">
-      <span className="topbar-progress-label">{label}</span>
-      <span
-        className={`topbar-progress-bar ${
-          phase.kind === "complete" ? "done" : ""
-        } ${isIndeterminate ? "indeterminate" : ""}`}
-      >
-        <span
-          className="topbar-progress-fill"
-          style={
-            isIndeterminate ? undefined : { width: `${pct.toFixed(1)}%` }
-          }
-        />
-      </span>
+    <Link href="/upload" className="upload-badge" title="Upload in progress">
+      <div className={`upload-ring ${phase.kind === "complete" ? "done" : ""} ${indeterminate ? "indeterminate" : ""}`}>
+        <svg viewBox="0 0 36 36" className="upload-ring-svg">
+          <circle cx="18" cy="18" r="15" className="upload-ring-track" />
+          {!indeterminate && (
+            <circle
+              cx="18"
+              cy="18"
+              r="15"
+              className="upload-ring-progress"
+              strokeDasharray={`${(pct / 100) * 94.25} 94.25`}
+              strokeDashoffset="23.56"
+            />
+          )}
+        </svg>
+        <span className="upload-ring-label">{label}</span>
+      </div>
     </Link>
   );
 }
