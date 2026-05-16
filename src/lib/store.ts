@@ -15,6 +15,13 @@ export type GeminiAnalysis = {
   has_sand_bedding_confidence: number;
   depth_cm: number | null;
   depth_cm_confidence: number;
+  gps_present: boolean;
+  latitude: number | null;
+  longitude: number | null;
+  address_present: boolean;
+  address: string | null;
+  datetime_present: boolean;
+  datetime: string | null;
 };
 
 export type PhotoRecord = {
