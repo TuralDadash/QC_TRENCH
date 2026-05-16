@@ -1,93 +1,51 @@
 import { NextRequest } from "next/server";
-import { spawn } from "child_process";
+import { promises as fs } from "fs";
 import path from "path";
+import crypto from "crypto";
 import {
   loadIndex,
   mergeAnalysis,
   photoFilePath,
   type AnalysisUpdate,
-  type GeminiAnalysis,
-  type PhotoRecord,
+  type PhotoAnalysis,
 } from "@/lib/store";
+import { analyseImage } from "@/lib/analyse";
 
 export const runtime = "nodejs";
 
-// Each analysis spawns one `python analyze_image.py` subprocess, which makes a
-// single network call to Gemini. A handful in parallel keeps throughput up
-// without hammering the API; bump via env on faster keys.
 const GEMINI_CONCURRENCY = Math.max(
   1,
   Number(process.env.GEMINI_CONCURRENCY ?? 4),
 );
 
-const ANALYSIS_TIMEOUT_MS = 120_000;
+const MIME_MAP: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".heic": "image/heic",
+  ".heif": "image/heif",
+  ".tif": "image/tiff",
+  ".tiff": "image/tiff",
+};
 
-// Defaults to the local dev venv; Docker sets PYTHON_BIN to the image's venv
-// (see Dockerfile) since the host venv isn't valid inside the container.
-const PYTHON =
-  process.env.PYTHON_BIN ||
-  path.join(process.cwd(), "util", ".venv", "bin", "python");
-const SCRIPT = path.join(process.cwd(), "util", "analyze_image.py");
-const PROMPT_FILE = path.join(process.cwd(), "util", "prompts", "v1.txt");
-
-function runAnalysis(photoPath: string): Promise<GeminiAnalysis> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(PYTHON, [SCRIPT, photoPath, "-f", PROMPT_FILE], {
-      env: process.env,
-    });
-    let out = "";
-    let err = "";
-    let settled = false;
-    const finish = (fn: () => void) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      fn();
-    };
-    const timer = setTimeout(() => {
-      proc.kill("SIGKILL");
-      finish(() => reject(new Error("analysis timed out after 120s")));
-    }, ANALYSIS_TIMEOUT_MS);
-
-    proc.stdout.on("data", (d) => (out += d.toString()));
-    proc.stderr.on("data", (d) => (err += d.toString()));
-    proc.on("error", (e) => finish(() => reject(e)));
-    proc.on("close", (code) =>
-      finish(() => {
-        if (code !== 0) {
-          reject(new Error(err.trim() || `python exited with code ${code}`));
-          return;
-        }
-        try {
-          resolve(JSON.parse(out.trim()) as GeminiAnalysis);
-        } catch {
-          reject(
-            new Error(`could not parse Gemini output: ${out.slice(0, 200)}`),
-          );
-        }
-      }),
-    );
-  });
-}
-
-// Analyse every uploaded photo that doesn't yet have a Gemini result. Streams
-// NDJSON progress so the UI can update row-by-row, and persists each result as
-// it lands so an interrupted run keeps the work already paid for.
 export async function POST(_req: NextRequest) {
   const index = await loadIndex();
   const pending = index.filter((r) => !r.analysis);
 
+  const existingHashes = new Map<string, string>();
+  for (const r of index) {
+    if (r.fileHash) existingHashes.set(r.fileHash, r.id);
+  }
+
   const stream = new ReadableStream({
     async start(controller) {
       const enc = new TextEncoder();
-      const write = (obj: unknown) => {
+      const write = (obj: unknown) =>
         controller.enqueue(enc.encode(JSON.stringify(obj) + "\n"));
-      };
 
       write({ event: "start", total: pending.length });
 
-      // Serialise persistence — workers run concurrently but mergeAnalysis
-      // does a read-modify-write of the whole index, so chain the saves.
       let saveChain: Promise<unknown> = Promise.resolve();
       const persist = (update: AnalysisUpdate) => {
         saveChain = saveChain.then(() => mergeAnalysis([update]));
@@ -96,6 +54,7 @@ export async function POST(_req: NextRequest) {
 
       let nextIndex = 0;
       let done = 0;
+
       const workers = Array.from(
         { length: Math.min(GEMINI_CONCURRENCY, pending.length) },
         async () => {
@@ -104,33 +63,35 @@ export async function POST(_req: NextRequest) {
             if (i >= pending.length) break;
             const rec = pending[i];
 
-            let analysis: GeminiAnalysis | null = null;
-            let analysisError: string | null = null;
+            let analysis: PhotoAnalysis | null = null;
             try {
-              analysis = await runAnalysis(photoFilePath(rec.filename));
-            } catch (e) {
-              analysisError = (e as Error).message;
+              const buf = await fs.readFile(photoFilePath(rec.filename));
+              const ext = path.extname(rec.filename).toLowerCase();
+              const mime = MIME_MAP[ext] ?? "image/jpeg";
+              const fileHash =
+                rec.fileHash ??
+                crypto.createHash("sha256").update(buf).digest("hex");
+              if (!existingHashes.has(fileHash)) {
+                existingHashes.set(fileHash, rec.id);
+              }
+              analysis = await analyseImage(buf, mime, existingHashes, fileHash);
+            } catch {
+              analysis = null;
             }
-            const analyzedAt = analysis ? new Date().toISOString() : null;
 
-            await persist({ id: rec.id, analysis, analyzedAt, analysisError });
+            await persist({ id: rec.id, analysis });
 
             done++;
-            const updated: PhotoRecord = {
-              ...rec,
-              analysis,
-              analyzedAt,
-              analysisError,
-            };
             write({
               event: "analyzed",
               done,
               total: pending.length,
-              record: updated,
+              record: { ...rec, analysis },
             });
           }
         },
       );
+
       await Promise.all(workers);
       await saveChain;
 

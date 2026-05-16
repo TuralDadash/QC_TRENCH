@@ -1,10 +1,8 @@
 node_modules
 .next
 .git
-.env
 .env*.local
 data
-util/.venv
 Dockerfile
 docker-compose.yml
 README.md

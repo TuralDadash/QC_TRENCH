@@ -1,27 +1,25 @@
 import { promises as fs } from "fs";
 import path from "path";
 
-// Shape returned by util/analyze_image.py — keys mirror the TrenchAnalysis
-// pydantic model in that script, so the JSON is stored verbatim.
-export type GeminiAnalysis = {
-  has_trench: boolean;
-  has_trench_confidence: number;
-  has_vertical_measuring_stick: boolean;
-  has_vertical_measuring_stick_confidence: number;
-  has_address_sheet: boolean;
-  has_address_sheet_confidence: number;
+export type PhotoAnalysis = {
+  trench: boolean;
+  trenchConf: number;
+  measuringStick: boolean;
+  measuringStickConf: number;
+  sandBedding: boolean;
+  sandBeddingConf: number;
+  warningTape: boolean;
+  warningTapeConf: number;
+  sideView: boolean;
+  sideViewConf: number;
+  addressSheet: boolean;
+  addressSheetConf: number;
   addresses: string[];
-  has_sand_bedding: boolean;
-  has_sand_bedding_confidence: number;
-  depth_cm: number | null;
-  depth_cm_confidence: number;
-  gps_present: boolean;
-  latitude: number | null;
-  longitude: number | null;
-  address_present: boolean;
-  address: string | null;
-  datetime_present: boolean;
-  datetime: string | null;
+  isDuplicate: boolean;
+  duplicateOf: string | null;
+  gpsOnSite: boolean | null;
+  model: string;
+  analysedAt: string;
 };
 
 export type PhotoRecord = {
@@ -41,7 +39,6 @@ export type PhotoRecord = {
   hasGps: boolean;
   hasExif: boolean;
   exifFieldCount: number;
-  exifKeys?: string[];
   timestampSource: "exif" | "gps" | "filename" | "mtime" | "overlay" | null;
   gpsSource: "exif" | "overlay" | null;
   overlayApp: string | null;
@@ -51,16 +48,13 @@ export type PhotoRecord = {
   overlayTakenAt: string | null;
   overlayFound: boolean;
   overlayDetected: boolean;
-  analysis?: GeminiAnalysis | null;
-  analyzedAt?: string | null;
-  analysisError?: string | null;
+  fileHash?: string | null;
+  analysis?: PhotoAnalysis | null;
 };
 
 export type AnalysisUpdate = {
   id: string;
-  analysis: GeminiAnalysis | null;
-  analyzedAt: string | null;
-  analysisError: string | null;
+  analysis: PhotoAnalysis | null;
 };
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
@@ -89,8 +83,6 @@ export async function saveIndex(records: PhotoRecord[]) {
 
 export async function clearAll() {
   await ensureDirs();
-  // Empty the photos directory wholesale (in case earlier wipes left orphans
-  // not referenced by the current index).
   const entries = await fs.readdir(PHOTOS_DIR).catch(() => [] as string[]);
   await Promise.all(
     entries.map((name) =>
@@ -107,20 +99,13 @@ export async function appendRecords(newOnes: PhotoRecord[]) {
   return merged;
 }
 
-// Patch Gemini analysis results onto existing records by id. Reloads the
-// index each call so it's safe to interleave with uploads appending records.
 export async function mergeAnalysis(updates: AnalysisUpdate[]) {
   const existing = await loadIndex();
   const byId = new Map(updates.map((u) => [u.id, u]));
   const merged = existing.map((rec) => {
     const u = byId.get(rec.id);
     if (!u) return rec;
-    return {
-      ...rec,
-      analysis: u.analysis,
-      analyzedAt: u.analyzedAt,
-      analysisError: u.analysisError,
-    };
+    return { ...rec, analysis: u.analysis };
   });
   await saveIndex(merged);
   return merged;

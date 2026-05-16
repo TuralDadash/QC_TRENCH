@@ -8,20 +8,12 @@ export type OverlayExtraction = {
   takenAt: string | null;
   app: string | null;
   rawText: string;
-  // True iff we recognised an overlay-shaped block of text in the image,
-  // regardless of whether the coords were parseable.
   detected: boolean;
-  // True iff we extracted usable structured data (coords or timestamp).
   found: boolean;
-  // Independent signal of which fields parsed.
   parsedCoords: boolean;
   parsedTimestamp: boolean;
 };
 
-// Run the bundled `tesseract` binary on a buffer of preprocessed image data.
-// --oem 1 forces the LSTM engine only (skipping the legacy engine + the
-// expensive engine-comparison step); roughly 35% faster than the default
-// with no quality loss on these overlay layouts.
 function runTesseract(
   imageBuf: Buffer,
   psm: number,
@@ -53,12 +45,7 @@ function runTesseract(
 }
 
 type OcrPasses = {
-  // Text from the cropped overlay-band passes only. Address extraction uses
-  // these because they are far less noisy than the whole-image sparse-text
-  // pass — the photo's busy background contributes random fragments otherwise.
   bandText: string;
-  // Concatenation of every pass — used for coord and timestamp regex matching,
-  // where we want maximum recall.
   allText: string;
 };
 
@@ -67,17 +54,10 @@ async function multiPassOcr(source: Buffer): Promise<OcrPasses> {
   const w = meta.width ?? 0;
   const h = meta.height ?? 0;
 
-  // Too tiny — skip OCR entirely. Avoids libvips zero-height crop errors
-  // (e.g. the 1×1 placeholder JPEGs used in tests).
   if (w < 400 || h < 400) {
     return { bandText: "", allText: "" };
   }
 
-  // Two crops cover every overlay style we've seen — bottom band (Stamp/
-  // Timestamp Camera) and top band (GPS Map Camera). Dropping the
-  // full-image sparse pass was a 33% speedup with no recall loss on the
-  // sample images, because PSM 11 over the whole busy photo mostly added
-  // noise (random fragments from the construction-site background).
   const prepBottom = await sharp(source)
     .extract({
       left: 0,
@@ -97,8 +77,6 @@ async function multiPassOcr(source: Buffer): Promise<OcrPasses> {
     .normalise()
     .toBuffer();
 
-  // Serial within an image — concurrency is managed by the outer worker
-  // pool so the global number of tesseract subprocesses == OCR_CONCURRENCY.
   const bottom = await runTesseract(prepBottom, 6).catch(() => "");
   const top = await runTesseract(prepTop, 6).catch(() => "");
 
@@ -106,23 +84,17 @@ async function multiPassOcr(source: Buffer): Promise<OcrPasses> {
   return { bandText: combined, allText: combined };
 }
 
-// Tesseract often outputs unicode look-alikes that confuse downstream
-// regexes — esp. the German decimal comma rendered as U+201A. Map every
-// realistic variant back to its ASCII counterpart.
 function normaliseOcr(s: string): string {
   return s
     .replace(/‚/g, ",")
-    .replace(/[‘’]/g, "'")
-    .replace(/[“”]/g, '"')
+    .replace(/['']/g, "'")
+    .replace(/[""]/g, '"')
     .replace(/[′ʹ]/g, "'")
     .replace(/[″ʺ]/g, '"')
-    .replace(/ /g, " ");
+    .replace(/ /g, " ");
 }
 
-// --- Parsers -------------------------------------------------------------
-
 function parseDecimalCoords(text: string): [number, number] | null {
-  // GPS Map Camera style: "Lat 46.556513, Long 14.293693"
   const m = text.match(
     /Lat[^0-9\-]*(-?\d{1,3}[.,]\d+)[\s,]*Long[^0-9\-]*(-?\d{1,3}[.,]\d+)/i,
   );
@@ -135,13 +107,6 @@ function parseDecimalCoords(text: string): [number, number] | null {
 }
 
 function parseDmsCoords(text: string): [number, number] | null {
-  // Flexible DMS — tolerant to OCR-eaten symbols. We require the hemisphere
-  // letters (N/S and E/W) and accept any non-digit run between numeric groups.
-  // Decimal separator can be `,` or `.` (German overlays use `,`).
-  // Examples we want to match:
-  //   "46°33'46,08\"N 14°17'22,71\"E"
-  //   "46°33'46, 08\"N 14%16"     (tesseract noise on long)
-  //   "46°33 46 08 N 14 17 22 71 E"
   const re =
     /(\d{1,3})\D{1,4}(\d{1,2})\D{1,4}(\d{1,2}(?:[.,]\d+)?)\D{0,5}([NSns])\D{1,8}(\d{1,3})\D{1,4}(\d{1,2})\D{1,4}(\d{1,2}(?:[.,]\d+)?)\D{0,5}([EWew])/;
   const m = text.match(re);
@@ -176,7 +141,6 @@ function isValidLon(n: number) {
 }
 
 function parseTimestamp(text: string): string | null {
-  // GPS Map Camera: "09/14/2024 11:25 AM GMT+02:00" (MM/DD/YYYY)
   let m = text.match(
     /(\d{1,2})\/(\d{1,2})\/(\d{4})[\s,]+(\d{1,2}):(\d{2})(?:\s*([AP])M)?(?:\s*GMT\s*([+\-]\d{1,2}(?::\d{2})?))?/i,
   );
@@ -195,7 +159,6 @@ function parseTimestamp(text: string): string | null {
     if (!Number.isNaN(d.getTime())) return d.toISOString();
   }
 
-  // German: "08.08.2024 13:02"
   m = text.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})[\s,]+(\d{1,2}):(\d{2})/);
   if (m) {
     const iso = `${m[3]}-${pad(m[2])}-${pad(m[1])}T${pad(m[4])}:${m[5]}:00`;
@@ -223,8 +186,6 @@ function detectApp(text: string): string | null {
 }
 
 function extractAddress(text: string): string | null {
-  // Use only the cropped-band OCR text — the full-image sparse pass adds too
-  // much noise from the photo background to be reliable here.
   const skip = (l: string) =>
     /(Lat\s+-?\d|Long\s+-?\d|GPS\s*Map|Note\s*:|Captured by|Google)/i.test(l) ||
     /\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4}/.test(l) ||
@@ -232,26 +193,22 @@ function extractAddress(text: string): string | null {
   const candidates = text
     .split(/\r?\n/)
     .map((rawLine) => {
-      // Prune speckle tokens first — leading "A +-Maria Rain,…" becomes
-      // "Maria Rain,…" by dropping the 1-2 char OCR scraps token-by-token.
       const good = rawLine
         .split(/\s+/)
         .filter((t) => t.length > 0)
         .filter(
           (t) =>
             (t.length >= 3 && /[A-Za-zÄÖÜäöüß]/.test(t)) ||
-            /^\d{2,5}[,.]?$/.test(t), // postal codes, street numbers
+            /^\d{2,5}[,.]?$/.test(t),
         );
       return good.join(" ").replace(/^[^A-Za-zÄÖÜäöüß0-9]+/, "").trim();
     })
     .filter((l) => {
       if (l.length < 5) return false;
-      // require at least one 5-letter contiguous word
       if (!/[A-Za-zÄÖÜäöüß]{5,}/.test(l)) return false;
       return !skip(l);
     });
   if (candidates.length === 0) return null;
-  // De-duplicate (the same line often appears in multiple OCR passes) and cap.
   const seen = new Set<string>();
   const unique: string[] = [];
   for (const l of candidates) {
@@ -264,19 +221,13 @@ function extractAddress(text: string): string | null {
   return unique.join(" · ");
 }
 
-// Independent "is there an overlay block here?" signal that doesn't depend on
-// coords parsing successfully. Looks for the kinds of phrases these apps use.
 function detectOverlay(text: string): boolean {
   if (/GPS\s*Map\s*Cam|Timestamp\s*Camera|Captured by/i.test(text)) return true;
-  // A DMS-shaped fragment with hemisphere is overlay-y enough.
   if (/\d{1,3}\s*°\s*\d{1,2}\D{0,4}\d{1,2}[.,]\d+\D{0,4}[NS]/i.test(text)) return true;
-  // "Lat 46." / "Long 14." — even partial.
   if (/Lat\s+-?\d{1,3}[.,]\d/i.test(text) && /Long\s+-?\d{1,3}[.,]\d/i.test(text))
     return true;
   return false;
 }
-
-// --- Public --------------------------------------------------------------
 
 export async function extractOverlay(
   imageBuf: Buffer,
