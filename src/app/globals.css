@@ -1,8 +1,8 @@
 @import "leaflet/dist/leaflet.css";
 
 :root {
-  --bg:               #f0f4f8;
-  --bg-alt:           #e8edf3;
+  --bg:               #fafaf8;
+  --bg-alt:           #f0f0ed;
   --surface:          #ffffff;
   --surface-2:        #f8fafc;
   --glass:            rgba(255, 255, 255, 0.92);
@@ -42,7 +42,7 @@
 
   --gps:              #16a34a;
 
-  --topnav-height:    52px;
+  --topnav-height:    56px;
   --topnav-bg:        rgba(255, 255, 255, 0.82);
   --topnav-border:    rgba(0, 0, 0, 0.08);
 
@@ -126,19 +126,11 @@ main {
   flex-shrink: 0;
 }
 
-.brand-mark {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  background: linear-gradient(135deg, var(--accent-light), var(--accent-dark));
-  flex-shrink: 0;
-}
-
 .brand-name {
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 800;
   color: var(--text);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
   white-space: nowrap;
 }
 
@@ -227,7 +219,7 @@ main {
 .leaflet-container {
   height: 100%;
   width: 100%;
-  background: #e8edf3;
+  background: #ede8e3;
 }
 
 /* KPI strip over map */
@@ -600,8 +592,8 @@ main {
 .upload-page,
 .report-page {
   max-width: 1080px;
-  margin: 28px auto;
-  padding: 0 28px 60px;
+  margin: 36px auto;
+  padding: 0 32px 72px;
   animation: fade-in 0.28s var(--ease-out-soft);
 }
 
@@ -615,18 +607,19 @@ main {
 }
 
 .page-title {
-  margin: 0 0 4px;
-  font-size: 18px;
-  font-weight: 700;
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 800;
   color: var(--text);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
 }
 
 .subtitle {
   color: var(--text-muted);
   font-size: 13px;
   margin: 0 0 24px;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 /* ── Segmented control ───────────────────── */

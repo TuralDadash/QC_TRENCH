@@ -46,7 +46,6 @@ export default function NavBar() {
   return (
     <header className="topnav">
       <div className="topnav-brand">
-        <div className="brand-mark" />
         <span className="brand-name">APG Audit</span>
       </div>
 
