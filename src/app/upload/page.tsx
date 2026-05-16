@@ -828,7 +828,7 @@ function renderBackendCell(a: BackendAssessment) {
       {a.is_likely_ai_generated ? (
         <span
           className="badge err"
-          title={pc(a.is_likely_ai_generated_confidence)}
+          title={pc(a.is_likely_ai_generated_confidence ?? 0)}
         >
           AI?
         </span>
