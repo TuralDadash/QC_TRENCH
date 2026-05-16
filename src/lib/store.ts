@@ -6,6 +6,8 @@ export type PhotoAnalysis = {
   trenchConf: number;
   measuringStick: boolean;
   measuringStickConf: number;
+  depth_cm: number | null;
+  depth_cm_confidence: number;
   sandBedding: boolean;
   sandBeddingConf: number;
   warningTape: boolean;

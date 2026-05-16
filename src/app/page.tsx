@@ -271,7 +271,6 @@ export default function FlowPage() {
   const prevAnalysedRef = useRef(0);
   const [mapExpanded, setMapExpanded] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
-  const [mapCatFilter, setMapCatFilter] = useState<"all"|"cat1"|"cat2"|"cat3"|"cat4"|"no-gps">("all");
 
   useEffect(() => {
     if (!previewId && !mapExpanded) return;
@@ -458,6 +457,9 @@ export default function FlowPage() {
   return (
     <div className="page">
       <div className="page-scroll-track">
+        <svg className="page-scroll-svg" viewBox="0 0 9 100" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M4.5,2 L4.5,44 L7.5,56 L7.5,98" stroke="#dbeafe" strokeWidth="1" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
         <div className="page-scroll-fill" style={{ height: `calc(clamp(0%, ${(scrollProgress * 100).toFixed(2)}%, 100%) - 6px)` }} />
         <div
           className="page-scroll-dot"
@@ -466,9 +468,14 @@ export default function FlowPage() {
       </div>
 
       <section id="upload" className="section snap-section">
-        <span className="section-eyebrow" data-reveal>01 — Upload</span>
-        <h1 className="section-heading" data-reveal data-d="1">Trench documentation.<br />AI-verified.</h1>
-
+        <div className="section-line" />
+        <div className="upload-grid">
+          <div className="section-left">
+            <span className="section-eyebrow" data-reveal>01 — Upload</span>
+            <h1 className="section-heading" data-reveal data-d="1">Trench documentation.<br />AI-verified.</h1>
+            <p className="section-sub" data-reveal data-d="2">Upload site photos. The system checks GPS coordinates, depth measurement, sand bedding, warning tape — and flags every non-compliant section instantly.</p>
+          </div>
+          <div>
         <div className="upload-card" data-reveal data-d="2">
 
           {phase.kind !== "idle" && (
@@ -569,6 +576,8 @@ export default function FlowPage() {
           </div>
 
         </div>
+          </div>
+        </div>
 
         <div className="upload-results">
           {uploadedPhotos.length > 0 && (
@@ -653,26 +662,8 @@ export default function FlowPage() {
 
         {viewMode === "map" && (
           <div className="view-panel">
-            <div className="map-filter-bar">
-              {([
-                { id: "all",    label: `All (${photos.length})` },
-                { id: "cat1",   label: "Cat 1 · Green",   cls: "cat1" },
-                { id: "cat2",   label: "Cat 2 · Yellow",  cls: "cat2" },
-                { id: "cat3",   label: "Cat 3 · Red",     cls: "cat3" },
-                { id: "cat4",   label: "Cat 4 · Suspect", cls: "cat4" },
-                { id: "no-gps", label: `No GPS (${photos.filter(p => !p.hasGps).length})` },
-              ] as { id: typeof mapCatFilter; label: string; cls?: string }[]).map((f) => (
-                <button
-                  key={f.id}
-                  className={`map-filter-chip${mapCatFilter === f.id ? ` active${f.cls ? ` ${f.cls}` : ""}` : ""}`}
-                  onClick={() => setMapCatFilter(f.id)}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
             <div className="flow-map-container">
-              <MapView categoryFilter={mapCatFilter} />
+              <MapView />
               <button className="map-expand-btn" onClick={() => setMapExpanded(true)}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="15 3 21 3 21 9" />

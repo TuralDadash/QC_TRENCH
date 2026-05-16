@@ -10,6 +10,10 @@ import type { PhotoRecord } from "@/lib/store";
 
 const AUSTRIA_CENTER: [number, number] = [47.5162, 14.5501];
 const COVERAGE_RADIUS_M = 80;
+const PHOTO_INTERVAL_M = 5;
+const CHECKPOINT_RADIUS_M = 10;
+const EARTH_RADIUS_M = 6_371_000;
+const HOME_CONNECTION_MASTER_ITEM = "_98 Hausanschluss";
 
 type TrenchStatus = "green" | "yellow" | "red" | "missing";
 
@@ -60,7 +64,7 @@ type GeoLayers = {
 };
 
 function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371000;
+  const R = EARTH_RADIUS_M;
   const φ1 = (lat1 * Math.PI) / 180;
   const φ2 = (lat2 * Math.PI) / 180;
   const Δφ = ((lat2 - lat1) * Math.PI) / 180;
@@ -235,11 +239,12 @@ function formatCoords(p: PhotoRecord): string {
 }
 
 function NetworkPanel({
-  layers, photos, trenchStats, qcMode, onToggleMode,
+  layers, photos, trenchStats, coverage, qcMode, onToggleMode,
 }: {
   layers: GeoLayers;
   photos: PhotoRecord[];
   trenchStats: { green: number; yellow: number; red: number; missing: number; total: number };
+  coverage: { trenchLengthM: number; expectedPhotos: number; covered: number; missing: number };
   qcMode: boolean;
   onToggleMode: () => void;
 }) {
@@ -327,6 +332,26 @@ function NetworkPanel({
         </div>
       )}
 
+      {coverage.expectedPhotos > 0 && (
+        <div className="mnp-qc" style={{ marginTop: 10 }}>
+          <div className="mnp-qc-label">
+            Photo checkpoints · 1 per 5 m · {(coverage.trenchLengthM / 1000).toFixed(2)} km
+          </div>
+          <div className="mnp-qc-bar">
+            {coverage.covered > 0 && (
+              <div style={{ background: "#22c55e", flex: coverage.covered }} className="mnp-qc-seg" title={`Covered: ${coverage.covered}`} />
+            )}
+            {coverage.missing > 0 && (
+              <div style={{ background: "#ef4444", flex: coverage.missing }} className="mnp-qc-seg" title={`Missing: ${coverage.missing}`} />
+            )}
+          </div>
+          <div className="mnp-qc-breakdown">
+            <span style={{ color: "#22c55e" }}>{coverage.covered} covered</span>
+            <span style={{ color: "#ef4444", fontWeight: 600 }}>{coverage.missing} missing</span>
+          </div>
+        </div>
+      )}
+
       {trenchStats.total === 0 && stats.photoTotal === 0 && (
         <div className="mnp-qc">
           <div className="mnp-qc-label" style={{ color: "var(--text-muted)", fontStyle: "italic" }}>
@@ -388,9 +413,7 @@ function MapLegend({ qcMode }: { qcMode: boolean }) {
   );
 }
 
-type CategoryFilter = "all" | "cat1" | "cat2" | "cat3" | "cat4" | "no-gps";
-
-export default function MapView({ categoryFilter = "all" }: { categoryFilter?: CategoryFilter }) {
+export default function MapView() {
   const [photos, setPhotos] = useState<PhotoRecord[]>([]);
   const [layers, setLayers] = useState<GeoLayers>({});
   const [loading, setLoading] = useState(true);
@@ -440,13 +463,7 @@ export default function MapView({ categoryFilter = "all" }: { categoryFilter?: C
     [photos],
   );
 
-  const visiblePhotos = useMemo(() => {
-    if (categoryFilter === "all") return geoPhotos;
-    if (categoryFilter === "no-gps") return photos.filter((p) => !p.hasGps && p.latitude != null && p.longitude != null);
-    const catMap: Record<string, string> = { cat1: "green", cat2: "yellow", cat3: "red", cat4: "cat4" };
-    const target = catMap[categoryFilter];
-    return geoPhotos.filter((p) => photoCategory(p) === target);
-  }, [geoPhotos, photos, categoryFilter]);
+  const visiblePhotos = geoPhotos;
 
   const trenchStatusMap = useMemo(() => {
     const map = new Map<string, TrenchStatus>();
@@ -470,6 +487,47 @@ export default function MapView({ categoryFilter = "all" }: { categoryFilter?: C
     }
     return { green, yellow, red, missing, total: green + yellow + red + missing };
   }, [trenchStatusMap]);
+
+  const coverage = useMemo(() => {
+    const features = layers.trenches?.features ?? [];
+    const checkpoints: [number, number][] = [];
+    let trenchLengthM = 0;
+    let cumulative = 0;
+    let nextMark = 0;
+    for (const f of features) {
+      const geom = f.geometry;
+      if (!geom || geom.type !== "LineString") continue;
+      const coords = geom.coordinates as number[][];
+      if (f.properties?.masterItem === HOME_CONNECTION_MASTER_ITEM) continue;
+      for (let i = 0; i < coords.length - 1; i++) {
+        const [lonA, latA] = coords[i];
+        const [lonB, latB] = coords[i + 1];
+        const segLen = haversineM(latA, lonA, latB, lonB);
+        if (segLen <= 0) continue;
+        trenchLengthM += segLen;
+        while (nextMark <= cumulative + segLen) {
+          const t = (nextMark - cumulative) / segLen;
+          checkpoints.push([latA + (latB - latA) * t, lonA + (lonB - lonA) * t]);
+          nextMark += PHOTO_INTERVAL_M;
+        }
+        cumulative += segLen;
+      }
+    }
+    const photoPoints = geoPhotos.map((p) => [p.latitude!, p.longitude!] as const);
+    let covered = 0;
+    const pointFeatures: FeatureCollection["features"] = checkpoints.map(([lat, lon]) => {
+      const isCovered = photoPoints.some(([pLat, pLon]) => haversineM(lat, lon, pLat, pLon) <= CHECKPOINT_RADIUS_M);
+      if (isCovered) covered++;
+      return { type: "Feature", properties: { covered: isCovered }, geometry: { type: "Point", coordinates: [lon, lat] } };
+    });
+    return {
+      trenchLengthM,
+      expectedPhotos: checkpoints.length,
+      covered,
+      missing: checkpoints.length - covered,
+      points: { type: "FeatureCollection", features: pointFeatures } as FeatureCollection,
+    };
+  }, [layers.trenches, geoPhotos]);
 
   const makeTrenchStyle = useCallback(
     (feature?: Feature<Geometry, GeoJsonProperties>): PathOptions => {
@@ -575,6 +633,27 @@ export default function MapView({ categoryFilter = "all" }: { categoryFilter?: C
             </LayersControl.Overlay>
           )}
 
+          {layers.trenches && (
+            <LayersControl.Overlay checked name={`Photo coverage (${coverage.missing} missing / ${coverage.expectedPhotos} expected)`}>
+              <GeoJSON
+                key={`coverage-${geoPhotos.length}`}
+                data={coverage.points}
+                pointToLayer={(feature, latlng) =>
+                  L.circleMarker(latlng, {
+                    radius: 4,
+                    weight: 1,
+                    color: "#0f1115",
+                    fillColor: feature.properties?.covered ? "#22c55e" : "#ef4444",
+                    fillOpacity: 0.9,
+                  })
+                }
+                onEachFeature={(f, layer) =>
+                  layer.bindPopup(f.properties?.covered ? "Photo present" : "Photo missing — 1 photo per 5 m required")
+                }
+              />
+            </LayersControl.Overlay>
+          )}
+
           {layers.fcps && (
             <LayersControl.Overlay checked name={`FCPs (${layers.fcps.features.length})`}>
               <GeoJSON
@@ -598,22 +677,29 @@ export default function MapView({ categoryFilter = "all" }: { categoryFilter?: C
 
           <LayersControl.Overlay checked name={`Photos (${visiblePhotos.length})`}>
             <GeoJSON
-              key={`photos-${visiblePhotos.length}-${categoryFilter}`}
+              key={`photos-${visiblePhotos.length}`}
               data={({
                 type: "FeatureCollection",
-                features: visiblePhotos.map((p) => ({
-                  type: "Feature",
-                  properties: {
-                    id: p.id,
-                    name: p.originalName,
-                    takenAt: p.takenAt,
-                    project: p.project,
-                    lotId: p.lotId,
-                    color: markerColor(p),
-                    category: markerCategory(p),
-                  },
-                  geometry: { type: "Point", coordinates: [p.longitude!, p.latitude!] },
-                })),
+                features: visiblePhotos.map((p) => {
+                  const a = p.analysis as { measuringStick?: boolean; depth_cm?: number | null; addresses?: string[] } | null | undefined;
+                  return {
+                    type: "Feature",
+                    properties: {
+                      id: p.id,
+                      name: p.originalName,
+                      takenAt: p.takenAt,
+                      project: p.project,
+                      lotId: p.lotId,
+                      color: markerColor(p),
+                      category: markerCategory(p),
+                      latitude: p.latitude,
+                      longitude: p.longitude,
+                      address: p.overlayAddress ?? (a?.addresses?.[0] ?? null),
+                      depth_cm: a?.depth_cm ?? null,
+                    },
+                    geometry: { type: "Point", coordinates: [p.longitude!, p.latitude!] },
+                  };
+                }),
               }) as FeatureCollection}
               pointToLayer={(feature, latlng) => {
                 const color = (feature.properties?.color as string) ?? "#94a3b8";
@@ -628,16 +714,25 @@ export default function MapView({ categoryFilter = "all" }: { categoryFilter?: C
               onEachFeature={(f, layer) => {
                 const p = f.properties ?? {};
                 const color = (p.color as string) ?? "#94a3b8";
+                const depthStr = p.depth_cm != null
+                  ? `<div class="popup-row"><span class="popup-row-label">Depth</span><span style="font-weight:600">${p.depth_cm} cm</span></div>`
+                  : "";
+                const addrStr = p.address
+                  ? `<div class="popup-row"><span class="popup-row-label">Location</span><span>${p.address}</span></div>`
+                  : p.latitude != null
+                    ? `<div class="popup-row"><span class="popup-row-label">GPS</span><span>${Number(p.latitude).toFixed(5)}, ${Number(p.longitude).toFixed(5)}</span></div>`
+                    : "";
+                const dateStr = p.takenAt
+                  ? `<div class="popup-row"><span class="popup-row-label">Taken</span><span>${new Date(p.takenAt).toLocaleString("de-AT")}</span></div>`
+                  : "";
                 layer.bindPopup(
                   `<img src="/api/photos/${p.id}" class="popup-thumb" />
                    <div class="popup-name">${p.name}</div>
-                   <div class="popup-meta">
-                     <span style="color:${color};font-weight:700">${p.category}</span>
-                     ${p.project ? `<br/>Project: ${p.project}` : ""}
-                     ${p.lotId ? ` · Lot: ${p.lotId}` : ""}
-                     ${p.takenAt ? `<br/>${new Date(p.takenAt).toLocaleString("de-AT")}` : ""}
+                   <div class="popup-category" style="color:${color}">${p.category}</div>
+                   <div class="popup-rows">
+                     ${addrStr}${depthStr}${dateStr}
                    </div>`,
-                  { maxWidth: 240 },
+                  { maxWidth: 280 },
                 );
                 layer.on("click", () => setSelectedId(p.id));
               }}
@@ -650,6 +745,7 @@ export default function MapView({ categoryFilter = "all" }: { categoryFilter?: C
         layers={layers}
         photos={photos}
         trenchStats={trenchStats}
+        coverage={coverage}
         qcMode={qcMode}
         onToggleMode={() => setQcMode((v) => !v)}
       />

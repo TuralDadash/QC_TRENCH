@@ -17,6 +17,8 @@ Criteria:
 - has_side_view: the trench is photographed from the side so its cross-section, walls, and depth are clearly visible — not a top-down or oblique overhead shot.
 - has_address_sheet: a printed or hand-written sheet of paper listing street addresses. A sign, equipment label, or phone screen does not count.
 - addresses: every street address on the sheet, transcribed exactly as written. Empty array if none legible.
+- depth_cm: if has_vertical_measuring_stick is true and the depth is legible from the ruler markings, return the numeric depth in centimetres as a number. Otherwise return null.
+- depth_cm_confidence: confidence 0–100 for the depth reading. 0 if depth_cm is null.
 
 For every boolean also return confidence 0–100. When in doubt answer false with low confidence.
 
@@ -27,7 +29,8 @@ has_sand_bedding, has_sand_bedding_confidence,
 has_warning_tape, has_warning_tape_confidence,
 has_side_view, has_side_view_confidence,
 has_address_sheet, has_address_sheet_confidence,
-addresses`;
+addresses,
+depth_cm, depth_cm_confidence`;
 
 type RawResult = {
   has_trench: boolean;
@@ -43,6 +46,8 @@ type RawResult = {
   has_address_sheet: boolean;
   has_address_sheet_confidence: number;
   addresses: string[];
+  depth_cm: number | null;
+  depth_cm_confidence: number;
 };
 
 export async function analyseImage(
@@ -59,6 +64,7 @@ export async function analyseImage(
     return {
       trench: false, trenchConf: 0,
       measuringStick: false, measuringStickConf: 0,
+      depth_cm: null, depth_cm_confidence: 0,
       sandBedding: false, sandBeddingConf: 0,
       warningTape: false, warningTapeConf: 0,
       sideView: false, sideViewConf: 0,
@@ -94,6 +100,8 @@ export async function analyseImage(
     trenchConf: raw.has_trench_confidence ?? 0,
     measuringStick: raw.has_vertical_measuring_stick ?? false,
     measuringStickConf: raw.has_vertical_measuring_stick_confidence ?? 0,
+    depth_cm: raw.depth_cm ?? null,
+    depth_cm_confidence: raw.depth_cm_confidence ?? 0,
     sandBedding: raw.has_sand_bedding ?? false,
     sandBeddingConf: raw.has_sand_bedding_confidence ?? 0,
     warningTape: raw.has_warning_tape ?? false,

@@ -39,6 +39,7 @@ Rules for `depth_cm`:
 - Use the markings on the tape measure as a guide. Every 10 cm direction of makring changes, every 20 cm color of marking changes.
 - If the vertical stick is present but no horizontal reference is visible, return `null` (do not estimate from the top of the trench wall — perspective makes that unreliable).
 - `depth_cm_confidence` should reflect how legible the markings are and how clearly the intersection point is defined. Low confidence (≤30) if you had to interpolate between markings or the intersection is ambiguous.
+- be careful if the ruler crosser over; sometimes it will cross over twice, look at the measure closer to the trench in this case
 
 **Parallax warning.** The photo is rarely taken perfectly level with the trench. If the camera is held **above** the trench looking down, the horizontal reference appears to cross the vertical stick **higher** than it really does, making the trench look shallower than it is. If the camera is held **below** ground level (or very low, angled upward), the apparent crossing moves **lower** and the trench looks deeper. Always check the camera angle:
 
