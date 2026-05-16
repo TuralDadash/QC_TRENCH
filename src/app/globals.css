@@ -1,55 +1,55 @@
 @import "leaflet/dist/leaflet.css";
 
 :root {
-  --bg:               #fafaf8;
-  --bg-alt:           #f0f0ed;
+  --bg:               #f6f5f3;
+  --bg-alt:           #eeede9;
   --surface:          #ffffff;
-  --surface-2:        #f8fafc;
-  --glass:            rgba(255, 255, 255, 0.92);
+  --surface-2:        #f9f8f6;
+  --glass:            rgba(255, 255, 255, 0.90);
   --glass-border:     rgba(0, 0, 0, 0.07);
-  --border:           rgba(0, 0, 0, 0.08);
-  --border-strong:    rgba(0, 0, 0, 0.14);
+  --border:           rgba(0, 0, 0, 0.09);
+  --border-strong:    rgba(0, 0, 0, 0.16);
 
-  --text:             #111827;
-  --text-secondary:   #374151;
-  --text-muted:       #6b7280;
-  --text-dim:         #d1d5db;
+  --text:             #1a1a1a;
+  --text-secondary:   #3a3a3a;
+  --text-muted:       #707070;
+  --text-dim:         #c0c0c0;
 
-  --accent:           #0d9488;
-  --accent-dark:      #0f766e;
-  --accent-light:     #14b8a6;
-  --accent-glow:      rgba(13, 148, 136, 0.18);
-  --link:             #0d9488;
-  --link-hover:       #0f766e;
+  --accent:           #00797a;
+  --accent-dark:      #005f60;
+  --accent-light:     #009a9b;
+  --accent-glow:      rgba(0, 121, 122, 0.16);
+  --link:             #00797a;
+  --link-hover:       #005f60;
 
-  --ok:               #16a34a;
-  --ok-dark:          #15803d;
-  --ok-bg:            #f0fdf4;
-  --ok-border:        rgba(22, 163, 74, 0.22);
+  --ok:               #356b35;
+  --ok-dark:          #2a5429;
+  --ok-bg:            #f0f7f0;
+  --ok-border:        rgba(53, 107, 53, 0.22);
 
-  --warn:             #d97706;
-  --warn-badge:       #d97706;
-  --warn-bg:          #fffbeb;
-  --warn-border:      rgba(217, 119, 6, 0.22);
+  --warn:             #a06020;
+  --warn-badge:       #a06020;
+  --warn-bg:          #fdf6ed;
+  --warn-border:      rgba(160, 96, 32, 0.22);
 
-  --err:              #dc2626;
-  --err-bg:           #fef2f2;
-  --err-border:       rgba(220, 38, 38, 0.22);
+  --err:              #c01f1f;
+  --err-bg:           #fdf0f0;
+  --err-border:       rgba(192, 31, 31, 0.22);
 
-  --cat4:             #9333ea;
-  --cat4-bg:          #faf5ff;
-  --cat4-border:      rgba(147, 51, 234, 0.22);
+  --cat4:             #6b3a8a;
+  --cat4-bg:          #f7f2fc;
+  --cat4-border:      rgba(107, 58, 138, 0.20);
 
-  --gps:              #16a34a;
+  --gps:              #356b35;
 
   --topnav-height:    56px;
-  --topnav-bg:        rgba(255, 255, 255, 0.82);
-  --topnav-border:    rgba(0, 0, 0, 0.08);
+  --topnav-bg:        rgba(255, 255, 255, 0.88);
+  --topnav-border:    rgba(0, 0, 0, 0.09);
 
   --shadow-xs:        0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-sm:        0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-md:        0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
-  --shadow-lg:        0 12px 32px rgba(0, 0, 0, 0.10), 0 4px 8px rgba(0, 0, 0, 0.05);
+  --shadow-sm:        0 1px 3px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md:        0 4px 12px rgba(0, 0, 0, 0.07), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-lg:        0 12px 32px rgba(0, 0, 0, 0.09), 0 4px 8px rgba(0, 0, 0, 0.04);
 
   --radius-sm:        4px;
   --radius-md:        8px;
@@ -74,7 +74,7 @@ html, body {
   margin: 0;
   padding: 0;
   height: 100%;
-  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
@@ -238,7 +238,7 @@ main {
 .leaflet-container {
   height: 100%;
   width: 100%;
-  background: #ede8e3;
+  background: #e8e6e0;
 }
 
 /* KPI strip over map */
