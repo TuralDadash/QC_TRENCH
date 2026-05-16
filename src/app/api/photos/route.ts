@@ -7,13 +7,24 @@ import AdmZip from "adm-zip";
 import {
   PHOTOS_DIR,
   appendRecords,
+  clearAll,
   loadIndex,
   type PhotoRecord,
 } from "@/lib/store";
+import { extractOverlay } from "@/lib/overlayOcr";
 
 export const runtime = "nodejs";
 
 const IMAGE_EXT_RE = /\.(jpe?g|png|webp|heic|heif|tiff?)$/i;
+
+// Parallel OCR — CPU-bound (sharp + tesseract subprocesses). 6 is a good
+// default for an 8-12 core machine; bump via env when running on bigger
+// boxes. Each worker spawns one tesseract subprocess at a time, so the
+// global subprocess count == OCR_CONCURRENCY.
+const OCR_CONCURRENCY = Math.max(
+  1,
+  Number(process.env.OCR_CONCURRENCY ?? 6),
+);
 
 export async function GET() {
   const records = await loadIndex();
@@ -23,13 +34,13 @@ export async function GET() {
   return Response.json({ photos: sorted });
 }
 
+export async function DELETE() {
+  await clearAll();
+  return Response.json({ ok: true });
+}
+
 function num(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
-}
-function str(v: unknown): string | null {
-  if (typeof v !== "string") return null;
-  const s = v.trim();
-  return s.length ? s : null;
 }
 
 // Heuristic timestamp extraction from common phone / messenger filename patterns.
@@ -71,7 +82,8 @@ async function processImage(opts: {
 
   let meta: Record<string, unknown> | null = null;
   try {
-    // Broad parse — TIFF + EXIF + GPS + PNG IHDR + IPTC + XMP + maker notes.
+    // Broad parse so hasExif/exifFieldCount reflect everything actually in
+    // the file; we only pull coords + timestamp + dimensions out of it.
     meta = (await exifr.parse(buf, {
       tiff: true,
       ifd0: true,
@@ -81,8 +93,6 @@ async function processImage(opts: {
       iptc: true,
       xmp: true,
       jfif: true,
-      makerNote: true,
-      userComment: true,
       mergeOutput: true,
       sanitize: true,
     })) as Record<string, unknown> | null;
@@ -96,11 +106,11 @@ async function processImage(opts: {
         .map(([k]) => k)
     : [];
 
-  // GPS — first from the merged parse, then a second pass with the dedicated
-  // exifr.gps() helper which is sometimes more forgiving with malformed files.
-  let lat = num(meta?.latitude);
-  let lon = num(meta?.longitude);
-  if (lat === null || lon === null) {
+  // EXIF GPS — first from the merged parse, then a second pass with the
+  // dedicated exifr.gps() helper.
+  let exifLat = num(meta?.latitude);
+  let exifLon = num(meta?.longitude);
+  if (exifLat === null || exifLon === null) {
     try {
       const gps = await exifr.gps(buf);
       if (
@@ -108,28 +118,47 @@ async function processImage(opts: {
         typeof gps.latitude === "number" &&
         typeof gps.longitude === "number"
       ) {
-        lat = gps.latitude;
-        lon = gps.longitude;
+        exifLat = gps.latitude;
+        exifLon = gps.longitude;
       }
     } catch {
       // ignore
     }
   }
 
-  // Timestamp resolution: prefer EXIF capture time, then GPS-stamp, then
-  // filename pattern, then the file's lastModified handed to us by the client
-  // (or the zip entry mtime).
+  // Overlay OCR — always run, since the overlay is the audit-grade source
+  // even when EXIF is present. Stored as overlay* fields and used as the
+  // *primary* coordinate source when present, with EXIF as the fallback.
+  const overlay = await extractOverlay(buf).catch(() => null);
+
+  const lat = overlay?.latitude ?? exifLat;
+  const lon = overlay?.longitude ?? exifLon;
+  const gpsSource: PhotoRecord["gpsSource"] =
+    overlay?.latitude != null && overlay?.longitude != null
+      ? "overlay"
+      : exifLat !== null && exifLon !== null
+        ? "exif"
+        : null;
+
+  // Timestamp resolution: overlay first (audit source), then EXIF capture
+  // time, GPS-stamp, filename, file mtime.
   let takenAt: string | null = null;
   let timestampSource: PhotoRecord["timestampSource"] = null;
 
-  const exifTime =
-    (meta?.DateTimeOriginal as Date | undefined) ||
-    (meta?.CreateDate as Date | undefined) ||
-    (meta?.DateTime as Date | undefined) ||
-    (meta?.ModifyDate as Date | undefined);
-  if (exifTime instanceof Date && !Number.isNaN(exifTime.getTime())) {
-    takenAt = exifTime.toISOString();
-    timestampSource = "exif";
+  if (overlay?.takenAt) {
+    takenAt = overlay.takenAt;
+    timestampSource = "overlay";
+  }
+  if (!takenAt) {
+    const exifTime =
+      (meta?.DateTimeOriginal as Date | undefined) ||
+      (meta?.CreateDate as Date | undefined) ||
+      (meta?.DateTime as Date | undefined) ||
+      (meta?.ModifyDate as Date | undefined);
+    if (exifTime instanceof Date && !Number.isNaN(exifTime.getTime())) {
+      takenAt = exifTime.toISOString();
+      timestampSource = "exif";
+    }
   }
   if (!takenAt) {
     const gpsStamp = meta?.GPSDateStamp;
@@ -172,26 +201,22 @@ async function processImage(opts: {
     sourcePath,
     latitude: lat,
     longitude: lon,
-    altitude: num(meta?.GPSAltitude),
-    gpsAccuracy: num(meta?.GPSHPositioningError) ?? num(meta?.GPSDOP),
-    gpsDirection: num(meta?.GPSImgDirection),
     takenAt,
     timestampSource,
-    cameraMake: str(meta?.Make),
-    cameraModel: str(meta?.Model),
-    lensModel: str(meta?.LensModel) ?? str(meta?.LensInfo),
-    software: str(meta?.Software),
-    orientation: num(meta?.Orientation),
     width: num(meta?.ExifImageWidth) ?? num(meta?.ImageWidth),
     height: num(meta?.ExifImageHeight) ?? num(meta?.ImageHeight),
-    focalLength: num(meta?.FocalLength),
-    fNumber: num(meta?.FNumber),
-    iso: num(meta?.ISO) ?? num(meta?.ISOSpeedRatings),
-    exposureTime: num(meta?.ExposureTime),
     hasGps: lat !== null && lon !== null,
     hasExif: exifKeys.length > 0,
     exifFieldCount: exifKeys.length,
     exifKeys,
+    gpsSource,
+    overlayApp: overlay?.app ?? null,
+    overlayLatitude: overlay?.latitude ?? null,
+    overlayLongitude: overlay?.longitude ?? null,
+    overlayAddress: overlay?.address ?? null,
+    overlayTakenAt: overlay?.takenAt ?? null,
+    overlayFound: overlay?.found ?? false,
+    overlayDetected: overlay?.detected ?? false,
   };
 }
 
@@ -205,71 +230,35 @@ type Job = {
 };
 
 export async function POST(req: NextRequest) {
-  const form = await req.formData();
+  // Read the upload body BEFORE returning the streaming response. Reading
+  // req.formData() inside the stream's start callback is unreliable on this
+  // Next.js version — the request body and response stream can't always
+  // coexist that way.
+  let form: FormData;
+  try {
+    form = await req.formData();
+  } catch (err) {
+    return new Response(
+      JSON.stringify({ error: (err as Error).message || "form parse failed" }),
+      { status: 400 },
+    );
+  }
+
   const files = form.getAll("files") as File[];
   const paths = form.getAll("paths") as string[];
   const mtimes = form.getAll("mtimes") as string[];
   const project = (form.get("project") as string) || undefined;
   const lotId = (form.get("lotId") as string) || undefined;
+  // Temporary benchmarking knob — caps how many images are processed from
+  // this upload. Remove once we no longer need to tune throughput.
+  const limitRaw = form.get("limit");
+  const limit =
+    typeof limitRaw === "string" && limitRaw.length > 0
+      ? Math.max(0, Math.floor(Number(limitRaw)))
+      : null;
 
   if (files.length === 0) {
-    return new Response(JSON.stringify({ error: "no files" }), {
-      status: 400,
-    });
-  }
-
-  await fs.mkdir(PHOTOS_DIR, { recursive: true });
-
-  const jobs: Job[] = [];
-  const skipped: { name: string; reason: string }[] = [];
-
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    if (!file || typeof file === "string") continue;
-    const nameLower = file.name.toLowerCase();
-    const buf = Buffer.from(await file.arrayBuffer());
-    const mtime = mtimes[i] ? Number(mtimes[i]) : null;
-
-    if (nameLower.endsWith(".zip")) {
-      const archiveProject = project || file.name.replace(/\.zip$/i, "");
-      let zip: AdmZip;
-      try {
-        zip = new AdmZip(buf);
-      } catch {
-        skipped.push({ name: file.name, reason: "invalid zip" });
-        continue;
-      }
-      for (const entry of zip.getEntries()) {
-        if (entry.isDirectory) continue;
-        const entryName = entry.entryName;
-        const base = entryName.split("/").pop() || entryName;
-        if (base.startsWith(".") || entryName.startsWith("__MACOSX")) continue;
-        if (!IMAGE_EXT_RE.test(base)) {
-          skipped.push({ name: entryName, reason: "not an image" });
-          continue;
-        }
-        const zipEntryMtime = entry.header.time?.getTime() ?? null;
-        jobs.push({
-          buf: entry.getData(),
-          originalName: base,
-          sourcePath: entryName,
-          project: archiveProject,
-          lotId,
-          fallbackMtimeMs: zipEntryMtime,
-        });
-      }
-    } else if (IMAGE_EXT_RE.test(file.name)) {
-      jobs.push({
-        buf,
-        originalName: file.name,
-        sourcePath: paths[i] || file.name,
-        project,
-        lotId,
-        fallbackMtimeMs: mtime,
-      });
-    } else {
-      skipped.push({ name: file.name, reason: "unsupported type" });
-    }
+    return new Response(JSON.stringify({ error: "no files" }), { status: 400 });
   }
 
   const stream = new ReadableStream({
@@ -279,18 +268,125 @@ export async function POST(req: NextRequest) {
         controller.enqueue(enc.encode(JSON.stringify(obj) + "\n"));
       };
 
-      write({ event: "start", total: jobs.length });
-      const records: PhotoRecord[] = [];
-      for (let i = 0; i < jobs.length; i++) {
-        const rec = await processImage(jobs[i]);
-        records.push(rec);
-        write({
-          event: "processed",
-          index: i + 1,
-          total: jobs.length,
-          record: rec,
-        });
+      // First event — surfaces the pre-OCR "preparing" phase so the UI can
+      // render a loader while we read+extract zips before the first OCR.
+      write({ event: "phase", phase: "preparing" });
+
+      await fs.mkdir(PHOTOS_DIR, { recursive: true });
+
+      const jobs: Job[] = [];
+      const skipped: { name: string; reason: string }[] = [];
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (!file || typeof file === "string") continue;
+        const nameLower = file.name.toLowerCase();
+        const buf = Buffer.from(await file.arrayBuffer());
+        const mtime = mtimes[i] ? Number(mtimes[i]) : null;
+
+        if (nameLower.endsWith(".zip")) {
+          const archiveProject = project || file.name.replace(/\.zip$/i, "");
+          let zip: AdmZip;
+          try {
+            zip = new AdmZip(buf);
+          } catch {
+            skipped.push({ name: file.name, reason: "invalid zip" });
+            continue;
+          }
+          const entries = zip.getEntries();
+          write({
+            event: "extracting",
+            archive: file.name,
+            done: 0,
+            total: entries.length,
+          });
+          let lastEmit = Date.now();
+          for (let ei = 0; ei < entries.length; ei++) {
+            const entry = entries[ei];
+            if (entry.isDirectory) continue;
+            const entryName = entry.entryName;
+            const base = entryName.split("/").pop() || entryName;
+            if (base.startsWith(".") || entryName.startsWith("__MACOSX")) continue;
+            if (!IMAGE_EXT_RE.test(base)) {
+              skipped.push({ name: entryName, reason: "not an image" });
+              continue;
+            }
+            const zipEntryMtime = entry.header.time?.getTime() ?? null;
+            jobs.push({
+              buf: entry.getData(),
+              originalName: base,
+              sourcePath: entryName,
+              project: archiveProject,
+              lotId,
+              fallbackMtimeMs: zipEntryMtime,
+            });
+            // Throttle progress events to ~once every 150ms to keep the
+            // stream readable without flooding it.
+            if (Date.now() - lastEmit > 150 || ei === entries.length - 1) {
+              write({
+                event: "extracting",
+                archive: file.name,
+                done: ei + 1,
+                total: entries.length,
+              });
+              lastEmit = Date.now();
+            }
+          }
+        } else if (IMAGE_EXT_RE.test(file.name)) {
+          jobs.push({
+            buf,
+            originalName: file.name,
+            sourcePath: paths[i] || file.name,
+            project,
+            lotId,
+            fallbackMtimeMs: mtime,
+          });
+        } else {
+          skipped.push({ name: file.name, reason: "unsupported type" });
+        }
       }
+
+      // Apply the benchmarking limit AFTER the full pre-scan so the user
+      // sees how many images were skipped because of the cap.
+      let droppedByLimit = 0;
+      if (limit !== null && jobs.length > limit) {
+        droppedByLimit = jobs.length - limit;
+        jobs.length = limit;
+      }
+
+      write({
+        event: "start",
+        total: jobs.length,
+        concurrency: OCR_CONCURRENCY,
+        droppedByLimit,
+      });
+
+      // Parallel OCR. We mutate a shared next-index counter so each worker
+      // picks the next available job; results are written to the stream as
+      // they complete (so order doesn't strictly mirror input order).
+      const records: PhotoRecord[] = [];
+      let nextIndex = 0;
+      let done = 0;
+      const workers = Array.from(
+        { length: Math.min(OCR_CONCURRENCY, jobs.length) },
+        async () => {
+          while (true) {
+            const i = nextIndex++;
+            if (i >= jobs.length) break;
+            const rec = await processImage(jobs[i]);
+            records.push(rec);
+            done++;
+            write({
+              event: "processed",
+              done,
+              total: jobs.length,
+              record: rec,
+            });
+          }
+        },
+      );
+      await Promise.all(workers);
+
       if (records.length > 0) await appendRecords(records);
       write({ event: "done", skipped });
       controller.close();
