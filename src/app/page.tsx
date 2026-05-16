@@ -432,18 +432,18 @@ export default function FlowPage() {
     .filter((lot) => lot.photos.length > 0);
 
   return (
-    <div className="flow-page">
+    <div className="page">
 
-      <section id="upload" className="flow-section">
-        <div className="upload-layout">
-          <div className="flow-inner">
-            <span className="section-tag" data-reveal>Upload</span>
-            <h1 className="page-title" data-reveal data-d="1">Trench documentation.<br />AI-verified.</h1>
-            <p className="subtitle" data-reveal data-d="2">Upload site photos. The system checks GPS coordinates, depth measurement, sand bedding, warning tape — and flags every non-compliant section instantly.</p>
+      <section id="upload" className="section snap-section">
+        <div className="upload-grid">
+          <div className="section-left">
+            <span className="section-eyebrow" data-reveal>01 — Upload</span>
+            <h1 className="section-heading" data-reveal data-d="1">Trench documentation.<br />AI-verified.</h1>
+            <p className="section-sub" data-reveal data-d="2">Upload site photos. The system checks GPS coordinates, depth measurement, sand bedding, warning tape — and flags every non-compliant section instantly.</p>
           </div>
 
-          <div className="flow-inner">
-          <div className="upload-form-card" data-reveal data-d="2">
+          <div>
+          <div className="upload-card" data-reveal data-d="2">
 
           {phase.kind !== "idle" && (
             <div className="upload-phases">
@@ -544,7 +544,7 @@ export default function FlowPage() {
           </div>
         </div>
 
-        <div className="flow-inner">
+        <div>
           {uploadedPhotos.length > 0 && (
             <div className="results">
               <div className="summary">
@@ -616,13 +616,11 @@ export default function FlowPage() {
         </div>
       </section>
 
-      <section id="map" ref={mapSectionRef as React.RefObject<HTMLElement>} className="flow-section">
+      <section id="map" ref={mapSectionRef as React.RefObject<HTMLElement>} className="section snap-section">
         <div className={`section-content${mapLocked ? " section-blurred" : ""}`}>
-          <div className="flow-inner">
-            <span className="section-tag" data-reveal>Coverage Map</span>
-            <h2 className="page-title" data-reveal data-d="1">Network &amp; coverage.</h2>
-            <p className="subtitle" data-reveal data-d="2">9 FCPs · 404 buildings · 19.6 km of trench across CLP20417A. Each photo pinned to the network, colored by compliance category.</p>
-          </div>
+            <span className="section-eyebrow" data-reveal>02 — Map</span>
+            <h2 className="section-heading" data-reveal data-d="1">Network &amp; coverage.</h2>
+            <p className="section-sub" data-reveal data-d="2">9 FCPs · 404 buildings · 19.6 km of trench. Each photo pinned to the network, colored by QC category.</p>
           <div className="flow-map-container" data-reveal data-d="3">
             <MapView />
             <button className="map-expand-btn" onClick={() => setMapExpanded(true)}>
@@ -643,34 +641,29 @@ export default function FlowPage() {
         )}
       </section>
 
-      <section id="report" ref={reportSectionRef as React.RefObject<HTMLElement>} className="flow-section">
+      <section id="report" ref={reportSectionRef as React.RefObject<HTMLElement>} className="section snap-section">
         <div className={`section-content${reportLocked ? " section-blurred" : ""}`}>
-        <div className="flow-inner">
-            <span className="section-tag" data-reveal>Deficiency Report</span>
-            <div className="report-header" data-reveal data-d="1">
-              <div>
-                <h2 className="page-title">Deficiency report.</h2>
-                <p className="subtitle">
-                  {photos.length} photos · {lots.length} lot{lots.length === 1 ? "" : "s"} · {analysedCount} analysed
-                </p>
+            <span className="section-eyebrow" data-reveal>03 — Report</span>
+            <h2 className="section-heading" data-reveal data-d="1">Deficiency report.</h2>
+            <p className="section-sub" data-reveal data-d="2">
+              {photos.length} photos · {lots.length} lot{lots.length === 1 ? "" : "s"} · {analysedCount} analysed
+            </p>
+            <div className="report-kpi-row" data-reveal data-d="1">
+              <div className="report-kpi-card ok">
+                <div className="report-kpi-num">{totalPassAll}</div>
+                <div className="report-kpi-label">Cat 1 · Duct + Depth</div>
               </div>
-              <div className="report-kpi-row">
-                <div className="report-kpi-card ok">
-                  <div className="report-kpi-num">{totalPassAll}</div>
-                  <div className="report-kpi-label">Cat 1 · Duct + Depth</div>
-                </div>
-                <div className="report-kpi-card warn">
-                  <div className="report-kpi-num">{Math.max(0, analysedCount - totalPassAll - totalFailed)}</div>
-                  <div className="report-kpi-label">Cat 2 · Duct only</div>
-                </div>
-                <div className="report-kpi-card err">
-                  <div className="report-kpi-num">{totalFailed}</div>
-                  <div className="report-kpi-label">Cat 3/4 · Red / Suspect</div>
-                </div>
-                <div className="report-kpi-card">
-                  <div className="report-kpi-num">{photos.length - analysedCount}</div>
-                  <div className="report-kpi-label">Not analysed</div>
-                </div>
+              <div className="report-kpi-card warn">
+                <div className="report-kpi-num">{Math.max(0, analysedCount - totalPassAll - totalFailed)}</div>
+                <div className="report-kpi-label">Cat 2 · Duct only</div>
+              </div>
+              <div className="report-kpi-card err">
+                <div className="report-kpi-num">{totalFailed}</div>
+                <div className="report-kpi-label">Cat 3/4 · Red / Suspect</div>
+              </div>
+              <div className="report-kpi-card">
+                <div className="report-kpi-num">{photos.length - analysedCount}</div>
+                <div className="report-kpi-label">Not analysed</div>
               </div>
             </div>
 
@@ -763,7 +756,6 @@ export default function FlowPage() {
                 </div>
               );
             })}
-          </div>
         </div>
         {reportLocked && (
           <div className="lock-overlay">
