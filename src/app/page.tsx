@@ -15,8 +15,6 @@ type PhotoAnalysis = {
   sandBedding: boolean;
   warningTape: boolean;
   sideView: boolean;
-  addressSheet: boolean;
-  addresses: string[];
   isDuplicate: boolean;
   duplicateOf: string | null;
   gpsOnSite: boolean | null;

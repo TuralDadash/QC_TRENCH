@@ -89,11 +89,9 @@ async function processImage(opts: {
   } catch {
   }
 
-  const exifKeys = meta
-    ? Object.entries(meta)
-        .filter(([, v]) => v !== undefined && v !== null && v !== "")
-        .map(([k]) => k)
-    : [];
+  const exifFieldCount = meta
+    ? Object.values(meta).filter((v) => v !== undefined && v !== null && v !== "").length
+    : 0;
 
   let exifLat = num(meta?.latitude);
   let exifLon = num(meta?.longitude);
@@ -187,9 +185,8 @@ async function processImage(opts: {
     width: num(meta?.ExifImageWidth) ?? num(meta?.ImageWidth),
     height: num(meta?.ExifImageHeight) ?? num(meta?.ImageHeight),
     hasGps: lat !== null && lon !== null,
-    hasExif: exifKeys.length > 0,
-    exifFieldCount: exifKeys.length,
-    exifKeys,
+    hasExif: exifFieldCount > 0,
+    exifFieldCount,
     gpsSource,
     overlayApp: overlay?.app ?? null,
     overlayLatitude: overlay?.latitude ?? null,
