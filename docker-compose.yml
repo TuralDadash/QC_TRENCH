@@ -4,7 +4,7 @@ services:
   postgres:
     image: postgres:16-alpine
     ports:
-      - "5432:5432"
+      - "5431:5431"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -18,7 +18,7 @@ services:
       context: .
       target: dev
     ports:
-      - "3000:3000"
+      - "3001:3001"
     depends_on:
       - postgres
     volumes:
@@ -33,7 +33,7 @@ services:
     environment:
       NODE_ENV: development
       DATA_DIR: /app/data
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/trench_qc
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5431/trench_qc
       # Passed through from the host env / a root .env file. Required for the
       # "Process" button (Gemini analysis); the app still runs without it.
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}

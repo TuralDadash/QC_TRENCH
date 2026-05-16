@@ -6,7 +6,7 @@ function getPool(): Pool {
   if (!pool) {
     const connectionString =
       process.env.DATABASE_URL ||
-      "postgresql://postgres:postgres@localhost:5432/trench_qc";
+      "postgresql://postgres:postgres@localhost:5431/trench_qc";
 
     pool = new Pool({
       connectionString,
