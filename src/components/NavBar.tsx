@@ -3,10 +3,10 @@
 import { useEffect, useState } from "react";
 import UploadStatusBadge from "@/components/UploadStatusBadge";
 
-const ITEMS = [
-  { id: "upload", label: "Upload" },
-  { id: "map",    label: "Map" },
-  { id: "report", label: "Report" },
+const STEPS = [
+  { id: "upload", num: "01", label: "Upload" },
+  { id: "map",    num: "02", label: "Map" },
+  { id: "report", num: "03", label: "Report" },
 ];
 
 export default function NavBar() {
@@ -15,17 +15,15 @@ export default function NavBar() {
   useEffect(() => {
     const main = document.querySelector("main");
     if (!main) return;
-
     const update = () => {
       const mid = main.scrollTop + main.clientHeight * 0.45;
       let current = "upload";
-      for (const { id } of ITEMS) {
+      for (const { id } of STEPS) {
         const el = document.getElementById(id);
         if (el && el.offsetTop <= mid) current = id;
       }
       setActive(current);
     };
-
     main.addEventListener("scroll", update, { passive: true });
     update();
     return () => main.removeEventListener("scroll", update);
@@ -36,27 +34,27 @@ export default function NavBar() {
   }
 
   return (
-    <>
-      <div className="wordmark">
-        <span className="brand-mark" />
-        <span className="brand-name">öGIG QC</span>
-        <div className="wordmark-badge">
-          <UploadStatusBadge />
-        </div>
-      </div>
+    <nav className="navbar">
+      <a className="nav-brand" onClick={() => scrollTo("upload")}>
+        <span className="nav-brand-name">öGIG QC</span>
+      </a>
 
-      <nav className="side-dots">
-        {ITEMS.map((item) => (
+      <div className="nav-steps">
+        {STEPS.map((s) => (
           <button
-            key={item.id}
-            className={`side-dot ${active === item.id ? "active" : ""}`}
-            onClick={() => scrollTo(item.id)}
-            aria-label={item.label}
+            key={s.id}
+            className={`nav-step${active === s.id ? " active" : ""}`}
+            onClick={() => scrollTo(s.id)}
           >
-            <span className="side-dot-label">{item.label}</span>
+            <span className="nav-step-num">{s.num}</span>
+            <span className="nav-step-label">{s.label}</span>
           </button>
         ))}
-      </nav>
-    </>
+      </div>
+
+      <div className="nav-right">
+        <UploadStatusBadge />
+      </div>
+    </nav>
   );
 }
