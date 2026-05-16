@@ -11,25 +11,30 @@ import type { PhotoRecord } from "@/lib/store";
 const AUSTRIA_CENTER: [number, number] = [47.5162, 14.5501];
 const COVERAGE_RADIUS_M = 80;
 
-type TrenchStatus = "complete" | "partial" | "missing";
+type TrenchStatus = "green" | "yellow" | "red" | "missing";
 
 const QC_COLORS: Record<TrenchStatus, string> = {
-  complete: "#22c55e",
-  partial:  "#f59e0b",
-  missing:  "#ef4444",
+  green:   "#22c55e",
+  yellow:  "#f59e0b",
+  red:     "#ef4444",
+  missing: "#94a3b8",
 };
 
 const QC_LABELS: Record<TrenchStatus, string> = {
-  complete: "Complete",
-  partial:  "Partial",
-  missing:  "Missing",
+  green:   "Cat 1 · Duct + Depth",
+  yellow:  "Cat 2 · Duct only",
+  red:     "Cat 3 · Depth only",
+  missing: "No coverage",
 };
 
 const QC_DESC: Record<TrenchStatus, string> = {
-  complete: "Compliant photos, GPS & depth confirmed",
-  partial:  "Photos present but quality insufficient",
-  missing:  "No compliant photos available",
+  green:   "Duct visible + depth ruler confirmed",
+  yellow:  "Duct evidence only, depth unconfirmed",
+  red:     "Depth evidence only, no duct visible",
+  missing: "No compliant photos for this segment",
 };
+
+const CAT4_COLOR = "#ea580c";
 
 const TRENCH_TYPES: Array<{ color: string; label: string }> = [
   { color: "#FE0DFF", label: "Hausanschluss" },
@@ -79,6 +84,16 @@ function minDistToLineString(pLat: number, pLon: number, coords: number[][]): nu
   return best;
 }
 
+function photoCategory(p: PhotoRecord): "green" | "yellow" | "red" | "cat4" {
+  const a = p.analysis as Record<string, unknown> | null | undefined;
+  if (!a) return "cat4";
+  if (a.isDuplicate || a.gpsOnSite === false) return "cat4";
+  if (a.trench && a.measuringStick) return "green";
+  if (a.trench) return "yellow";
+  if (a.measuringStick) return "red";
+  return "cat4";
+}
+
 function computeStatus(coords: number[][], geoPhotos: PhotoRecord[]): TrenchStatus {
   const lats = coords.map((c) => c[1]);
   const lons = coords.map((c) => c[0]);
@@ -99,12 +114,13 @@ function computeStatus(coords: number[][], geoPhotos: PhotoRecord[]): TrenchStat
 
   if (nearby.length === 0) return "missing";
   const analysed = nearby.filter((p) => p.analysis);
-  if (analysed.length === 0) return "partial";
-  const passing = analysed.filter((p) => {
-    const a = p.analysis as Record<string, unknown>;
-    return a.trench && a.measuringStick && a.sideView;
-  });
-  return passing.length / analysed.length >= 0.5 ? "complete" : "partial";
+  if (analysed.length === 0) return "missing";
+
+  const cats = analysed.map(photoCategory);
+  if (cats.some((c) => c === "green")) return "green";
+  if (cats.some((c) => c === "yellow")) return "yellow";
+  if (cats.some((c) => c === "red")) return "red";
+  return "missing";
 }
 
 function propsTable(props: GeoJsonProperties, keys: string[]) {
@@ -134,23 +150,21 @@ const clusterStyle: PathOptions = {
 
 function markerColor(p: PhotoRecord): string {
   if (!p.hasGps || !p.analysis) return "#94a3b8";
-  const a = p.analysis as Record<string, unknown>;
-  if (a.isDuplicate || a.gpsOnSite === false) return QC_COLORS.missing;
-  const keys = ["trench", "measuringStick", "sandBedding", "warningTape", "sideView"];
-  if (keys.every((k) => a[k])) return QC_COLORS.complete;
-  if (!a.trench || !a.sideView) return QC_COLORS.missing;
-  return QC_COLORS.partial;
+  const cat = photoCategory(p);
+  if (cat === "green") return QC_COLORS.green;
+  if (cat === "yellow") return QC_COLORS.yellow;
+  if (cat === "red") return QC_COLORS.red;
+  return CAT4_COLOR;
 }
 
 function markerCategory(p: PhotoRecord): string {
   if (!p.hasGps) return "No GPS";
   if (!p.analysis) return "Pending";
-  const a = p.analysis as Record<string, unknown>;
-  if (a.isDuplicate || a.gpsOnSite === false) return "Missing · Suspect";
-  const keys = ["trench", "measuringStick", "sandBedding", "warningTape", "sideView"];
-  if (keys.every((k) => a[k])) return "Complete";
-  if (!a.trench || !a.sideView) return "Missing · Critical";
-  return "Partial";
+  const cat = photoCategory(p);
+  if (cat === "green") return "Cat 1 · Duct + Depth";
+  if (cat === "yellow") return "Cat 2 · Duct only";
+  if (cat === "red") return "Cat 3 · Depth only";
+  return "Cat 4 · Suspect";
 }
 
 function makeFcpIcon(name: string) {
@@ -223,7 +237,7 @@ function NetworkPanel({
 }: {
   layers: GeoLayers;
   photos: PhotoRecord[];
-  trenchStats: { complete: number; partial: number; missing: number; total: number };
+  trenchStats: { green: number; yellow: number; red: number; missing: number; total: number };
   qcMode: boolean;
   onToggleMode: () => void;
 }) {
@@ -289,32 +303,24 @@ function NetworkPanel({
         <div className="mnp-qc">
           <div className="mnp-qc-label">Coverage by segment · {trenchStats.total} sections</div>
           <div className="mnp-qc-bar">
-            {trenchStats.complete > 0 && (
-              <div
-                style={{ background: QC_COLORS.complete, flex: trenchStats.complete }}
-                className="mnp-qc-seg"
-                title={`Complete: ${trenchStats.complete}`}
-              />
+            {trenchStats.green > 0 && (
+              <div style={{ background: QC_COLORS.green, flex: trenchStats.green }} className="mnp-qc-seg" title={`Cat 1 Green: ${trenchStats.green}`} />
             )}
-            {trenchStats.partial > 0 && (
-              <div
-                style={{ background: QC_COLORS.partial, flex: trenchStats.partial }}
-                className="mnp-qc-seg"
-                title={`Partial: ${trenchStats.partial}`}
-              />
+            {trenchStats.yellow > 0 && (
+              <div style={{ background: QC_COLORS.yellow, flex: trenchStats.yellow }} className="mnp-qc-seg" title={`Cat 2 Yellow: ${trenchStats.yellow}`} />
+            )}
+            {trenchStats.red > 0 && (
+              <div style={{ background: QC_COLORS.red, flex: trenchStats.red }} className="mnp-qc-seg" title={`Cat 3 Red: ${trenchStats.red}`} />
             )}
             {trenchStats.missing > 0 && (
-              <div
-                style={{ background: QC_COLORS.missing, flex: trenchStats.missing }}
-                className="mnp-qc-seg"
-                title={`Missing: ${trenchStats.missing}`}
-              />
+              <div style={{ background: QC_COLORS.missing, flex: trenchStats.missing }} className="mnp-qc-seg" title={`No coverage: ${trenchStats.missing}`} />
             )}
           </div>
           <div className="mnp-qc-breakdown">
-            <span style={{ color: QC_COLORS.complete }}>{pct(trenchStats.complete)}% Complete</span>
-            <span style={{ color: QC_COLORS.partial }}>{pct(trenchStats.partial)}% Partial</span>
-            <span style={{ color: QC_COLORS.missing }}>{pct(trenchStats.missing)}% Missing</span>
+            <span style={{ color: QC_COLORS.green }}>{pct(trenchStats.green)}% Cat 1</span>
+            <span style={{ color: QC_COLORS.yellow }}>{pct(trenchStats.yellow)}% Cat 2</span>
+            <span style={{ color: QC_COLORS.red }}>{pct(trenchStats.red)}% Cat 3</span>
+            <span style={{ color: QC_COLORS.missing }}>{pct(trenchStats.missing)}% None</span>
           </div>
         </div>
       )}
@@ -335,8 +341,8 @@ function MapLegend({ qcMode }: { qcMode: boolean }) {
     <div className="map-legend-panel">
       {qcMode ? (
         <>
-          <div className="mlp-section-label">Trench QC Status</div>
-          {(["complete", "partial", "missing"] as TrenchStatus[]).map((s) => (
+          <div className="mlp-section-label">Segment QC status</div>
+          {(["green", "yellow", "red", "missing"] as TrenchStatus[]).map((s) => (
             <div key={s} className="mlp-row">
               <span className="mlp-line" style={{ background: QC_COLORS[s] }} />
               <div>
@@ -348,10 +354,11 @@ function MapLegend({ qcMode }: { qcMode: boolean }) {
           <div className="mlp-divider" />
           <div className="mlp-section-label">Photo markers</div>
           {[
-            { color: QC_COLORS.complete, label: "Pass · all checks" },
-            { color: QC_COLORS.partial,  label: "Partial · some fail" },
-            { color: QC_COLORS.missing,  label: "Critical / No GPS" },
-            { color: "#94a3b8",           label: "Pending analysis" },
+            { color: QC_COLORS.green,  label: "Cat 1 · Duct + Depth" },
+            { color: QC_COLORS.yellow, label: "Cat 2 · Duct only" },
+            { color: QC_COLORS.red,    label: "Cat 3 · Depth only" },
+            { color: CAT4_COLOR,       label: "Cat 4 · Suspect / Fraud" },
+            { color: "#94a3b8",        label: "Pending analysis" },
           ].map((item) => (
             <div key={item.label} className="mlp-row">
               <span className="mlp-dot" style={{ background: item.color }} />
@@ -436,13 +443,14 @@ export default function MapView() {
   }, [layers.trenches, geoPhotos]);
 
   const trenchStats = useMemo(() => {
-    let complete = 0, partial = 0, missing = 0;
+    let green = 0, yellow = 0, red = 0, missing = 0;
     for (const s of trenchStatusMap.values()) {
-      if (s === "complete") complete++;
-      else if (s === "partial") partial++;
+      if (s === "green") green++;
+      else if (s === "yellow") yellow++;
+      else if (s === "red") red++;
       else missing++;
     }
-    return { complete, partial, missing, total: complete + partial + missing };
+    return { green, yellow, red, missing, total: green + yellow + red + missing };
   }, [trenchStatusMap]);
 
   const makeTrenchStyle = useCallback(

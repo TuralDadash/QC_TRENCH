@@ -1,6 +1,27 @@
 import { promises as fs } from "fs";
 import path from "path";
 
+export type PhotoAnalysis = {
+  trench: boolean;
+  trenchConf: number;
+  measuringStick: boolean;
+  measuringStickConf: number;
+  sandBedding: boolean;
+  sandBeddingConf: number;
+  warningTape: boolean;
+  warningTapeConf: number;
+  sideView: boolean;
+  sideViewConf: number;
+  addressSheet: boolean;
+  addressSheetConf: number;
+  addresses: string[];
+  isDuplicate: boolean;
+  duplicateOf: string | null;
+  gpsOnSite: boolean | null;
+  model: string;
+  analysedAt: string;
+};
+
 export type PhotoRecord = {
   id: string;
   filename: string;
@@ -31,25 +52,9 @@ export type PhotoRecord = {
   analysis?: PhotoAnalysis | null;
 };
 
-export type PhotoAnalysis = {
-  trench: boolean;
-  trenchConf: number;
-  measuringStick: boolean;
-  measuringStickConf: number;
-  sandBedding: boolean;
-  sandBeddingConf: number;
-  warningTape: boolean;
-  warningTapeConf: number;
-  sideView: boolean;
-  sideViewConf: number;
-  addressSheet: boolean;
-  addressSheetConf: number;
-  addresses: string[];
-  isDuplicate: boolean;
-  duplicateOf: string | null;
-  gpsOnSite: boolean | null;
-  model: string;
-  analysedAt: string;
+export type AnalysisUpdate = {
+  id: string;
+  analysis: PhotoAnalysis | null;
 };
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
@@ -90,6 +95,18 @@ export async function clearAll() {
 export async function appendRecords(newOnes: PhotoRecord[]) {
   const existing = await loadIndex();
   const merged = [...existing, ...newOnes];
+  await saveIndex(merged);
+  return merged;
+}
+
+export async function mergeAnalysis(updates: AnalysisUpdate[]) {
+  const existing = await loadIndex();
+  const byId = new Map(updates.map((u) => [u.id, u]));
+  const merged = existing.map((rec) => {
+    const u = byId.get(rec.id);
+    if (!u) return rec;
+    return { ...rec, analysis: u.analysis };
+  });
   await saveIndex(merged);
   return merged;
 }

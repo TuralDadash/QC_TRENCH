@@ -61,14 +61,20 @@
 
 * { box-sizing: border-box; }
 
-html, body {
+html {
   margin: 0;
   padding: 0;
-  height: 100%;
+  scroll-behavior: smooth;
+  scroll-snap-type: y proximity;
   font-family: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
+}
+
+body {
+  margin: 0;
+  padding: 0;
 }
 
 a { color: var(--link); text-decoration: none; }
@@ -1720,4 +1726,23 @@ main {
 @media print {
   body { background: white; color: black; }
   .wordmark, .side-dots { display: none; }
+}
+
+.snap-section {
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+.hero-dot-grid {
+  background-image: radial-gradient(circle, #cbd5e1 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+@keyframes scroll-bounce {
+  0%, 100% { transform: translateY(0);   opacity: 0.4; }
+  50%       { transform: translateY(6px); opacity: 1;   }
+}
+
+.scroll-hint-arrow {
+  animation: scroll-bounce 1.8s ease-in-out infinite;
 }

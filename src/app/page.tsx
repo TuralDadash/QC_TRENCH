@@ -44,7 +44,7 @@ const UPLOAD_STEPS: { id: PhaseStep; label: string }[] = [
 const STEP_ORDER: PhaseStep[] = ["uploading", "extracting", "processing", "complete"];
 
 const CRITERIA: { key: CriterionKey; label: string }[] = [
-  { key: "trench", label: "Trench" },
+  { key: "trench", label: "Duct" },
   { key: "measuringStick", label: "Depth" },
   { key: "sandBedding", label: "Sand" },
   { key: "warningTape", label: "Tape" },
@@ -52,9 +52,9 @@ const CRITERIA: { key: CriterionKey; label: string }[] = [
 ];
 
 const CAT_LABELS: Record<Category, string> = {
-  1: "Cat 1 · Complete",
-  2: "Cat 2 · Partial",
-  3: "Cat 3 · Critical",
+  1: "Cat 1 · Green",
+  2: "Cat 2 · Yellow",
+  3: "Cat 3 · Red",
   4: "Cat 4 · Suspect",
 };
 
@@ -75,12 +75,11 @@ function currentStep(phase: ReturnType<typeof useUpload>["phase"]): PhaseStep {
 
 function deriveCategory(p: Photo): Category {
   if (!p.analysis) return 2;
-  if (p.analysis.isDuplicate || p.analysis.gpsOnSite === false) return 4;
-  if (!p.hasGps) return 4;
-  const allPass = CRITERIA.every((c) => p.analysis![c.key]);
-  if (allPass) return 1;
-  if (!p.analysis.trench || !p.analysis.sideView) return 3;
-  return 2;
+  if (p.analysis.isDuplicate || p.analysis.gpsOnSite === false || !p.hasGps) return 4;
+  if (p.analysis.trench && p.analysis.measuringStick) return 1;
+  if (p.analysis.trench) return 2;
+  if (p.analysis.measuringStick) return 3;
+  return 4;
 }
 
 function whyFlagged(p: Photo): string[] {
@@ -658,15 +657,15 @@ export default function FlowPage() {
               <div className="report-kpi-row">
                 <div className="report-kpi-card ok">
                   <div className="report-kpi-num">{totalPassAll}</div>
-                  <div className="report-kpi-label">Cat 1 · Pass</div>
+                  <div className="report-kpi-label">Cat 1 · Duct + Depth</div>
                 </div>
                 <div className="report-kpi-card warn">
                   <div className="report-kpi-num">{Math.max(0, analysedCount - totalPassAll - totalFailed)}</div>
-                  <div className="report-kpi-label">Cat 2 · Partial</div>
+                  <div className="report-kpi-label">Cat 2 · Duct only</div>
                 </div>
                 <div className="report-kpi-card err">
                   <div className="report-kpi-num">{totalFailed}</div>
-                  <div className="report-kpi-label">Cat 3/4 · Failed</div>
+                  <div className="report-kpi-label">Cat 3/4 · Red / Suspect</div>
                 </div>
                 <div className="report-kpi-card">
                   <div className="report-kpi-num">{photos.length - analysedCount}</div>
