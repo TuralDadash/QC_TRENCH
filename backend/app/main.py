@@ -4,12 +4,14 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.pipeline import run as run_pipeline
+from app import db as report_db
+from app import report as report_mod
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
@@ -80,3 +82,57 @@ async def audit(
         route_path.write_bytes(route_data)
 
         return run_pipeline(photo_paths, route_path, concurrency=4)
+
+
+MOCK_META_DEFAULTS = {
+    "project_id": "ID Out of Database",
+    "project_subtitle": "Trenches Picture Review for Project X by Construction company Y",
+    "contractor": "Example Contractor Y",
+    "region": "Carinthia",
+    "submission_date": "12 May 2026",
+    "audit_date": "16 May 2026",
+    "audited_by": "Ohsome Compliance",
+}
+
+
+@app.post("/api/report/pdf")
+def generate_pdf_report(payload: dict = Body(default={})) -> FileResponse:
+    if len(str(payload)) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Payload too large.")
+
+    project = payload.get("project")
+    meta = {**MOCK_META_DEFAULTS, **(payload.get("meta") or {})}
+    length_m = payload.get("length_m")
+    cat4_overrides = payload.get("cat4_breakdown") or {}
+
+    try:
+        db_data = report_db.fetch_report_data(project=project)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"DB read failed: {exc}") from exc
+
+    tmp = Path(tempfile.mkstemp(suffix=".pdf", prefix="trench-audit-")[1])
+    report_mod.to_pdf(
+        db_data, tmp,
+        meta=meta, length_m=length_m, cat4_overrides=cat4_overrides,
+    )
+    return FileResponse(
+        tmp, media_type="application/pdf", filename="trench-audit.pdf",
+    )
+
+
+@app.post("/api/report/appendix.pdf")
+def generate_appendix_pdf(payload: dict = Body(default={})) -> FileResponse:
+    from app.pdf_appendix import build_appendix_pdf
+
+    project = payload.get("project")
+    meta = {**MOCK_META_DEFAULTS, **(payload.get("meta") or {})}
+    try:
+        db_data = report_db.fetch_report_data(project=project)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"DB read failed: {exc}") from exc
+
+    tmp = Path(tempfile.mkstemp(suffix=".pdf", prefix="trench-appendix-")[1])
+    build_appendix_pdf(tmp, db_data, meta=meta)
+    return FileResponse(
+        tmp, media_type="application/pdf", filename="trench-audit-appendix.pdf",
+    )
