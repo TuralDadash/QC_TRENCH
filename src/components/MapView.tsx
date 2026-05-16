@@ -373,10 +373,10 @@ export default function MapView() {
     <div className="map-wrapper">
       <MapCore center={center} zoom={zoom} onReady={handleMapReady}>
         <LayersControl position="bottomright">
-          <LayersControl.BaseLayer checked name="Dark">
+          <LayersControl.BaseLayer checked name="Map">
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+              url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
             />
           </LayersControl.BaseLayer>
           <LayersControl.BaseLayer name="Satellite">
@@ -385,10 +385,10 @@ export default function MapView() {
               url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
             />
           </LayersControl.BaseLayer>
-          <LayersControl.BaseLayer name="Voyager">
+          <LayersControl.BaseLayer name="Dark">
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-              url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
             />
           </LayersControl.BaseLayer>
 

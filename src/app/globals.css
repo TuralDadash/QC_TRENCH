@@ -15,12 +15,12 @@
   --text-muted:       #55606e;
   --text-dim:         #2d3748;
 
-  --accent:           #00797a;
-  --accent-dark:      #005f60;
-  --accent-light:     #009a9b;
-  --accent-glow:      rgba(0, 121, 122, 0.28);
-  --link:             #009a9b;
-  --link-hover:       #00b4b5;
+  --accent:           rgba(255, 255, 255, 0.75);
+  --accent-dark:      rgba(255, 255, 255, 0.45);
+  --accent-light:     #ffffff;
+  --accent-glow:      rgba(255, 255, 255, 0.08);
+  --link:             rgba(255, 255, 255, 0.7);
+  --link-hover:       #ffffff;
 
   --ok:               #22c55e;
   --ok-dark:          #16a34a;
@@ -97,7 +97,6 @@ main {
 
 .flow-section {
   padding: 120px 0 100px;
-  border-top: 1px solid var(--border);
   min-height: 100vh;
   position: relative;
 }
@@ -321,7 +320,7 @@ main {
 .photo-panel-item:hover { background: rgba(255, 255, 255, 0.04); }
 
 .photo-panel-item.selected {
-  background: rgba(0, 121, 122, 0.1);
+  background: rgba(255, 255, 255, 0.06);
   border-left-color: var(--accent);
 }
 
@@ -671,12 +670,12 @@ main {
 
 
 .page-title {
-  margin: 0 0 28px;
-  font-size: clamp(56px, 8vw, 100px);
-  font-weight: 800;
+  margin: 0 0 24px;
+  font-size: clamp(30px, 4vw, 52px);
+  font-weight: 700;
   color: var(--text);
-  letter-spacing: -0.055em;
-  line-height: 0.91;
+  letter-spacing: -0.04em;
+  line-height: 1.0;
 }
 
 .subtitle {
@@ -821,7 +820,7 @@ main {
 .dropzone:hover,
 .dropzone.dragover {
   border-color: var(--accent-light);
-  background: rgba(0, 121, 122, 0.08);
+  background: rgba(255, 255, 255, 0.04);
   color: var(--text);
 }
 
@@ -1440,7 +1439,7 @@ main {
 }
 
 .upload-ring.indeterminate .upload-ring-track {
-  stroke: rgba(0, 121, 122, 0.35);
+  stroke: rgba(255, 255, 255, 0.2);
   stroke-dasharray: 28 66.25;
   animation: ring-spin 1.2s linear infinite;
 }
