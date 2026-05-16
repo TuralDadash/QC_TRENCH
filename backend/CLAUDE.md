@@ -76,6 +76,24 @@ Segment status:
 - green / yellow / red aggregation over 5 m bins
 - missing bins create coverage gaps and pull otherwise non-red segments to yellow
 
+## Route dataset
+
+The reference dataset is cluster **CLP20417A-P1-B00** (FTTH fiber project "Maria Rain", Carinthia, Austria; WGS84 lon/lat, CRS84, ~14.29°E/46.56°N). Three copies of the same data exist:
+
+- `CLP20417A-P1-B00__.../` at the repo root — zipped GeoJSON, the backend pipeline input.
+- `public/geojson/` — unzipped, served statically and fetched by the frontend map.
+- `../json/` (sibling of the repo root) — unzipped working copies.
+
+Five layers, each a single `FeatureCollection`:
+
+- **`CLP20417A-P1-B00_Trenches`** (~2.8 MB) — 2,983 `LineString` features, the trench/duct network the pipeline matches photos against. Total length ≈ 19.6 km; 2–4 vertices per line. Key per-segment properties: `masterItem` (trench type), `executionState`, `length` (m), `ductMainFull`/`ductMainShort`, `getAEndpoint`/`getZEndpoint`, `isConnectedToHome`. Trench types: `_01 Künette versiegelt` 1211, `_03 Künette unversiegelt` 553, `_98 Hausanschluss` 421, `_11 Querung offen` 268, `_16 Spülbohrung` 258, `_17 Pressung` 221, plus minor types. States: 2950 Documented, 19 Gross planning, 9 Plan released, 5 Executed. 394 segments connect to a home. `ductType` is null on every feature.
+- **`CLP20417A-P1-B00_FCPs`** — 9 `Point` features, Fiber Concentration Points (F012, F169–F172, F175, F200, F202, F205) with home/building counts and core needs.
+- **`CLP20417A-P1-B00_FCP_Polygons`** — 9 `Polygon` catchment areas, one per FCP above.
+- **`CLP20417A-P1-B00_SiteCluster_Polygons`** — 1 `Polygon`, the overall cluster/tender (`Ausschreibung`) boundary.
+- **`CLP20417A-P1-B00_POP`** — empty `FeatureCollection` (Point-of-Presence layer, no features).
+
+Consumers: the backend pipeline (`app/geo.py`) only loads the Trenches layer. The frontend `src/components/MapView.tsx` fetches and renders four layers as toggleable Leaflet overlays — SiteCluster, FCP_Polygons, FCPs, and Trenches; the empty POP layer is not loaded.
+
 ## Public interfaces
 
 - `POST /api/audit`
