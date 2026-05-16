@@ -412,6 +412,10 @@ export default function FlowPage() {
           </div>
           <h1 className="page-title">AI quality control<br />for trench documentation.</h1>
           <p className="subtitle">Upload field photos and get an instant compliance report — GPS matched, AI verified, audit ready.</p>
+        </div>
+
+        <div className="flow-inner">
+          <div className="upload-form-card">
 
           {phase.kind !== "idle" && (
             <div className="upload-phases">
@@ -508,6 +512,10 @@ export default function FlowPage() {
             </button>
           </div>
 
+          </div>
+        </div>
+
+        <div className="flow-inner">
           {uploadedPhotos.length > 0 && (
             <div className="results">
               <div className="summary">

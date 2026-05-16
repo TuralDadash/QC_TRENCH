@@ -19,11 +19,46 @@ import type { PhotoRecord } from "@/lib/store";
 
 const AUSTRIA_CENTER: [number, number] = [47.5162, 14.5501];
 
-const COLOR_ACCENT = "#0d9488";
-const COLOR_ACCENT_BORDER = "rgba(255,255,255,0.8)";
 const COLOR_TRENCH_DEFAULT = "#3b82f6";
-const COLOR_FCP_DEFAULT = "#16a34a";
+const COLOR_FCP_DEFAULT = "#22c55e";
 const COLOR_CLUSTER = "#f59e0b";
+
+const CAT_COLORS = {
+  cat1:    "#22c55e",
+  cat2:    "#f59e0b",
+  cat3:    "#ef4444",
+  cat4:    "#a855f7",
+  pending: "#64748b",
+} as const;
+
+const LEGEND_ITEMS = [
+  { color: CAT_COLORS.cat1,    label: "Cat 1 · Pass" },
+  { color: CAT_COLORS.cat2,    label: "Cat 2 · Partial" },
+  { color: CAT_COLORS.cat3,    label: "Cat 3 · Critical" },
+  { color: CAT_COLORS.cat4,    label: "Cat 4 · Suspect" },
+  { color: CAT_COLORS.pending, label: "Pending" },
+];
+
+function markerColor(p: PhotoRecord): string {
+  if (!p.hasGps || !p.analysis) return CAT_COLORS.pending;
+  const a = p.analysis as Record<string, unknown>;
+  if (a.isDuplicate || a.gpsOnSite === false) return CAT_COLORS.cat4;
+  const keys = ["trench", "measuringStick", "sandBedding", "warningTape", "sideView"];
+  if (keys.every((k) => a[k])) return CAT_COLORS.cat1;
+  if (!a.trench || !a.sideView) return CAT_COLORS.cat3;
+  return CAT_COLORS.cat2;
+}
+
+function markerCategory(p: PhotoRecord): string {
+  if (!p.hasGps) return "No GPS";
+  if (!p.analysis) return "Pending";
+  const a = p.analysis as Record<string, unknown>;
+  if (a.isDuplicate || a.gpsOnSite === false) return "Cat 4 · Suspect";
+  const keys = ["trench", "measuringStick", "sandBedding", "warningTape", "sideView"];
+  if (keys.every((k) => a[k])) return "Cat 1 · Pass";
+  if (!a.trench || !a.sideView) return "Cat 3 · Critical";
+  return "Cat 2 · Partial";
+}
 
 const GEOJSON_FILES = {
   siteCluster: "/geojson/CLP20417A-P1-B00_SiteCluster_Polygons.geojson",
@@ -43,7 +78,7 @@ function propsTable(props: GeoJsonProperties, keys: string[]) {
   if (!props) return "";
   const rows = keys
     .filter((k) => props[k] != null && props[k] !== "")
-    .map((k) => `<tr><td style="color:#6b7280;padding-right:8px;font-size:10px">${k}</td><td style="color:#111827;font-size:11px">${String(props[k])}</td></tr>`)
+    .map((k) => `<tr><td style="color:#8b9ab0;padding-right:8px;font-size:10px">${k}</td><td style="color:#e2e8f2;font-size:11px">${String(props[k])}</td></tr>`)
     .join("");
   return `<table style="border-collapse:collapse">${rows}</table>`;
 }
@@ -228,17 +263,10 @@ export default function MapView() {
     <div className="map-wrapper">
       <MapCore center={center} zoom={zoom} onReady={handleMapReady}>
         <LayersControl position="bottomleft">
-          <LayersControl.BaseLayer checked name="Light (default)">
+          <LayersControl.BaseLayer checked name="Dark (default)">
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-              url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-            />
-          </LayersControl.BaseLayer>
-
-          <LayersControl.BaseLayer name="OpenStreetMap">
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
             />
           </LayersControl.BaseLayer>
 
@@ -246,6 +274,13 @@ export default function MapView() {
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
               url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+            />
+          </LayersControl.BaseLayer>
+
+          <LayersControl.BaseLayer name="OpenStreetMap">
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
           </LayersControl.BaseLayer>
 
@@ -351,7 +386,8 @@ export default function MapView() {
                     takenAt: p.takenAt,
                     project: p.project,
                     lotId: p.lotId,
-                    isDuplicate: p.analysis?.isDuplicate ?? false,
+                    color: markerColor(p),
+                    category: markerCategory(p),
                   },
                   geometry: {
                     type: "Point",
@@ -360,25 +396,26 @@ export default function MapView() {
                 })),
               }) as FeatureCollection}
               pointToLayer={(feature, latlng) => {
-                const isDup = feature.properties?.isDuplicate as boolean;
+                const color = (feature.properties?.color as string) ?? CAT_COLORS.pending;
                 return L.circleMarker(latlng, {
                   radius: 8,
-                  color: COLOR_ACCENT_BORDER,
+                  color: "rgba(0,0,0,0.5)",
                   weight: 2,
-                  fillColor: isDup ? "#9333ea" : COLOR_ACCENT,
-                  fillOpacity: 0.9,
+                  fillColor: color,
+                  fillOpacity: 0.95,
                 });
               }}
               onEachFeature={(f, layer) => {
                 const p = f.properties ?? {};
+                const color = (p.color as string) ?? CAT_COLORS.pending;
                 layer.bindPopup(
                   `<img src="/api/photos/${p.id}" class="popup-thumb" />
                    <div class="popup-name">${p.name}</div>
                    <div class="popup-meta">
-                     ${p.project ? `Project: ${p.project}` : ""}
+                     <span style="color:${color};font-weight:700;font-size:11px">${p.category}</span>
+                     ${p.project ? `<br/>Project: ${p.project}` : ""}
                      ${p.lotId ? ` &middot; Lot: ${p.lotId}` : ""}
                      ${p.takenAt ? `<br/>Taken: ${new Date(p.takenAt).toLocaleString()}` : ""}
-                     ${p.isDuplicate ? `<br/><span style="color:#9333ea;font-weight:600">Duplicate detected</span>` : ""}
                    </div>`,
                   { maxWidth: 240 },
                 );
@@ -388,6 +425,15 @@ export default function MapView() {
           </LayersControl.Overlay>
         </LayersControl>
       </MapCore>
+
+      <div className="map-legend">
+        {LEGEND_ITEMS.map((item) => (
+          <div key={item.label} className="map-legend-item">
+            <span className="map-legend-dot" style={{ background: item.color }} />
+            <span>{item.label}</span>
+          </div>
+        ))}
+      </div>
 
       <div className="map-kpi-strip">
         <div className="kpi-card">
