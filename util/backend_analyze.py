@@ -13,7 +13,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "backend"))
 
+import json  # noqa: E402
+
 from app import vlm  # noqa: E402
+from app.classify import classify_photo  # noqa: E402
 
 
 def main() -> int:
@@ -39,7 +42,11 @@ def main() -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    print(assessment.model_dump_json())
+    classification = classify_photo(assessment)
+    out = assessment.model_dump()
+    out["category"] = classification.category
+    out["reason"] = classification.reason
+    print(json.dumps(out))
     return 0
 
 

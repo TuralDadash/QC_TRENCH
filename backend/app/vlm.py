@@ -1,9 +1,8 @@
 """Gemini Vision wrapper for per-photo signal extraction.
 
 One call per photo returns a structured PhotoAssessment covering:
-  - duct visibility, depth/ruler reading, sand bedding, pipe end seals
-  - burnt-in metadata OCR (GPS, timestamp) + address label OCR
-  - privacy flags + AI-generated suspicion
+  - duct visibility, depth/ruler reading, sand bedding
+  - burnt-in metadata OCR (GPS, timestamp) + address-label OCR
 
 If GEMINI_API_KEY is unset or the SDK is missing, assess() returns a deterministic
 empty PhotoAssessment (all confidences 0). This keeps the rest of the pipeline
@@ -52,33 +51,20 @@ class BurntInMetadata(BaseModel):
 
 class AddressLabel(BaseModel):
     found: bool = False
+    paper_note_count: int = 0
     text: Optional[str] = None
-    confidence: float = 0.0
-
-
-class PrivacyFlags(BaseModel):
-    faces_visible: bool = False
-    license_plates_visible: bool = False
-
-
-class PipeEndSeals(BaseModel):
-    status: Literal["sealed", "unsealed", "not_visible"] = "not_visible"
     confidence: float = 0.0
 
 
 class PhotoAssessment(BaseModel):
     is_construction_photo: bool = False
     is_construction_photo_confidence: float = 0.0
-    is_likely_ai_generated: bool = False
-    is_likely_ai_generated_confidence: float = 0.0
     overall_confidence: float = 0.0
     duct: DuctSignal = Field(default_factory=DuctSignal)
     depth: DepthSignal = Field(default_factory=DepthSignal)
     sand_bedding: SandBeddingSignal = Field(default_factory=SandBeddingSignal)
     burnt_in_metadata: BurntInMetadata = Field(default_factory=BurntInMetadata)
     address_label: AddressLabel = Field(default_factory=AddressLabel)
-    privacy_flags: PrivacyFlags = Field(default_factory=PrivacyFlags)
-    pipe_end_seals: PipeEndSeals = Field(default_factory=PipeEndSeals)
 
 
 _DEFAULT_PROMPT_FILE = Path(__file__).parent / "prompts" / "default.txt"

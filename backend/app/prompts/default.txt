@@ -7,25 +7,37 @@ your certainty in the corresponding observation. Use low values whenever the
 evidence is partial, occluded, blurry, or ambiguous.
 
 Definitions:
-- duct: a plastic conduit (often black or grey corrugated tube) carrying fiber cables.
-  Yellow cables are typically gas/electric, NOT fiber — set duct.visible=false unless
-  you can identify a fiber duct. Other utility pipes can coexist in the trench.
-- depth measurement: a folding ruler or measuring tape lying in the trench, used to
-  document trench depth. If visible, read the depth in centimeters. Plausible range
-  for fiber trenches is 70-120 cm. If you cannot read it confidently, set uncertain=true
-  and report depth_range_cm with your best lower/upper bounds.
+- duct: any fiber-optic infrastructure inside the trench. Set duct.visible=true if
+  EITHER (a) a plastic conduit (typically black, grey, or microduct bundles in
+  various colors) is visible, OR (b) fiber-optic cables themselves are visible in
+  the trench — even when the cable has not yet been threaded into a duct, or the
+  duct lies open with the fiber exposed. The duct does NOT have to be closed/sealed
+  to count as visible. Yellow warning tape alone is NOT a duct. Larger utility pipes
+  (gas, electricity, water) that obviously do not belong to fiber infrastructure are
+  NOT a duct.
+- depth measurement: a folding ruler or measuring tape used to document trench
+  depth. Only VERTICAL measurements count — the ruler must stand upright from the
+  trench floor to the surface (or be held vertically along the trench wall).
+  Horizontal measurements lying across the trench are NOT valid depth evidence;
+  set ruler_visible=false in that case. Plausible vertical depth range for fiber
+  trenches is 40-120 cm. If you cannot read the value confidently, set
+  uncertain=true and report depth_range_cm with your best lower/upper bounds.
 - sand bedding: fine light-colored sand layer around the duct. Distinguish from
-  dark soil. Shadows can make sand look darker — if ambiguous, use status="uncertain".
+  dark soil. Yellow warning tape, plastic foil, or rocks are NOT sand. Shadows can
+  make sand look darker — if ambiguous, use status="uncertain".
 - burnt_in_metadata: many photos have white text overlaid at the bottom/edge with
-  GPS coordinates and timestamp. Extract them. raw_text is the literal overlay text.
-  Set confidence based on how legible the overlay is.
-- address_label: occasionally a white paper with handwritten or printed address is
-  placed in the trench. Extract its full text if visible.
+  GPS coordinates and timestamp. This is software-added overlay, not part of the
+  physical scene. Extract the lat/lon and timestamp. raw_text is the literal
+  overlay text. Set confidence based on how legible the overlay is.
+- address_label: a PHYSICAL white paper note placed in the trench or held up in
+  the frame, showing a written or printed address. Set found=true ONLY if such a
+  physical paper note is present in the scene. Do NOT set found=true based on the
+  burnt-in overlay text (that is metadata, not an address note). Set
+  paper_note_count to the number of distinct white paper address notes visible in
+  the photo (0 if none, 1 if one, etc.). Combine the text from all notes into the
+  text field, separated by " | ".
 - is_construction_photo: true if the image plausibly depicts a construction site
   (trench, tools, machinery, workers, building materials). Use
   is_construction_photo_confidence to express certainty.
-- is_likely_ai_generated: flag if the image looks synthetic, has impossible physics,
-  watermark from a known generator, or unnatural texture artifacts. Use
-  is_likely_ai_generated_confidence to express certainty.
 
 Return only the structured JSON. Do not include any prose outside the schema.

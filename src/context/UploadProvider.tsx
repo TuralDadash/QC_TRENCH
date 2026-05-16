@@ -33,11 +33,15 @@ export type GeminiAnalysis = {
 
 // Shape returned by the "backend" (alternative) path — mirrors PhotoAssessment
 // in backend/app/vlm.py.
+export type PhotoCategory = "green" | "yellow" | "red" | "cat4";
+
 export type BackendAssessment = {
+  category?: PhotoCategory;
+  reason?: string | null;
   is_construction_photo: boolean;
   is_construction_photo_confidence: number;
-  is_likely_ai_generated: boolean;
-  is_likely_ai_generated_confidence: number;
+  is_likely_ai_generated?: boolean;
+  is_likely_ai_generated_confidence?: number;
   overall_confidence: number;
   duct: { visible: boolean; confidence: number; notes: string };
   depth: {
@@ -57,8 +61,8 @@ export type BackendAssessment = {
     confidence: number;
   };
   address_label: { found: boolean; text: string | null; confidence: number };
-  privacy_flags: { faces_visible: boolean; license_plates_visible: boolean };
-  pipe_end_seals: {
+  privacy_flags?: { faces_visible: boolean; license_plates_visible: boolean };
+  pipe_end_seals?: {
     status: "sealed" | "unsealed" | "not_visible";
     confidence: number;
   };

@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code when working with this repository.
 
+## Scope and documentation language
+
+Only modify files inside `backend/`. Files outside `backend/` (e.g. `scope.md`, root `README.md`, sibling project folders) are owned by other contributors — leave them alone, even when the user asks for repo-wide changes.
+
+All Markdown files (`*.md`) inside `backend/` are written in English. When creating or editing a `.md` file here, write English even if the conversation with the user is in another language.
+
 ## Project
 
 **Fiber Trench QC** is a hackathon backend for the ÖGIG / Sustainista trench-documentation challenge. It ingests trench photos plus a GeoJSON route, extracts field evidence from the images, geo-matches photos to route segments, detects suspicious reuse, and classifies route coverage for acceptance review.
@@ -55,21 +61,25 @@ When `GEMINI_API_KEY` is missing, the VLM layer returns deterministic empty asse
 
 Per-photo VLM signals:
 
-- duct visibility
-- depth / ruler reading with uncertainty support
+- duct visibility (fiber duct OR exposed fiber cable inside the trench)
+- depth / ruler reading — vertical measurements only
 - sand bedding
 - burnt-in GPS and timestamp overlay
-- address label OCR
-- privacy flags
-- pipe end seals
-- AI-generated suspicion
+- address label OCR (physical white paper notes only, count per photo)
 
 Photo categories:
 
 - `green`: duct + readable depth evidence
 - `yellow`: duct evidence only
 - `red`: depth evidence only
-- `cat4`: no useful evidence, duplicate, AI-generated, or off-route
+- `cat4`: no useful evidence, duplicate, or off-route
+
+`reason` on each photo is human-readable for green/yellow/red too (e.g. `"duct visible (conf 0.85) and depth readable (95 cm)"`), so the verdict is self-explanatory in the JSON.
+
+Report-level address aggregation:
+- `addresses[]`: every detected paper-note address with photo reference
+- `duplicate_addresses[]`: same address text appearing on multiple photos
+- `aggregates.address_paper_notes_total`: total count of white paper notes across all photos
 
 Segment status:
 
@@ -123,7 +133,6 @@ Keep the JSON result shape stable unless the CLI, API consumers, tests, and docu
 
 See `improvements.md` for post-hackathon work:
 
-- detector implementation behind `app/ai_detect.py`
 - PDF generation in `app/report.py`
 - OCR alternatives beyond the current Gemini single-call approach
 - persistence, richer forensics, confidence calibration, and frontend map work

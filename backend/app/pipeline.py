@@ -18,7 +18,7 @@ from typing import Callable, Optional
 
 from PIL import Image
 
-from app import ai_detect, classify, duplicates, geo, report, vlm
+from app import classify, duplicates, geo, report, vlm
 
 # Austria-ish bbox for sanity-checking burnt-in GPS.
 # Loose enough to cover all of Austria; tight enough to drop obvious garbage.
@@ -79,7 +79,6 @@ def _process_one_sync(
             "phash": None,
             "metadata": {"gps": None, "timestamp": None, "valid": False, "source": "burnt_in_overlay"},
             "signals": {},
-            "is_likely_ai_generated": False,
             "duplicate_of": None,
             "segment_id": None,
             "segment_distance_m": None,
@@ -89,11 +88,6 @@ def _process_one_sync(
     phash_int = duplicates.average_phash(img)
     mime = "image/jpeg" if photo_path.suffix.lower() in (".jpg", ".jpeg") else "image/png"
     assessment = assess_fn(image_bytes, mime)
-
-    detector_result = ai_detect.detect(image_bytes)
-    is_ai = assessment.is_likely_ai_generated
-    if detector_result is not None:
-        is_ai = is_ai or detector_result["is_ai_generated"]
 
     gps, ts_iso, valid = _validate_metadata(assessment.burnt_in_metadata)
 
@@ -114,12 +108,8 @@ def _process_one_sync(
             "depth": assessment.depth.model_dump(),
             "sand_bedding": assessment.sand_bedding.model_dump(),
             "address_label": assessment.address_label.model_dump(),
-            "privacy_flags": assessment.privacy_flags.model_dump(),
-            "pipe_end_seals": assessment.pipe_end_seals.model_dump(),
         },
-        "is_likely_ai_generated": is_ai,
         "_assessment": assessment,
-        "_ai_detector_result": detector_result,
         "duplicate_of": None,
         "segment_id": None,
         "segment_distance_m": None,
@@ -221,7 +211,6 @@ def run(
     for p in photos:
         p.pop("_assessment", None)
         p.pop("_phash_int", None)
-        p.pop("_ai_detector_result", None)
         p.pop("_off_route", None)
 
     return report.to_json(
