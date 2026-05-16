@@ -411,13 +411,14 @@ export default function FlowPage() {
     <div className="flow-page">
 
       <section id="upload" className="flow-section">
-        <div className="flow-inner">
-          <span className="section-tag">Upload</span>
-          <h1 className="page-title">Trench documentation.<br />AI-verified.</h1>
-          <p className="subtitle">Upload site photos. The system checks GPS coordinates, depth measurement, sand bedding, warning tape — and flags every non-compliant section instantly.</p>
-        </div>
+        <div className="upload-layout">
+          <div className="flow-inner">
+            <span className="section-tag">Upload</span>
+            <h1 className="page-title">Trench documentation.<br />AI-verified.</h1>
+            <p className="subtitle">Upload site photos. The system checks GPS coordinates, depth measurement, sand bedding, warning tape — and flags every non-compliant section instantly.</p>
+          </div>
 
-        <div className="flow-inner">
+          <div className="flow-inner">
           <div className="upload-form-card">
 
           {phase.kind !== "idle" && (
@@ -515,6 +516,7 @@ export default function FlowPage() {
             </button>
           </div>
 
+          </div>
           </div>
         </div>
 

@@ -1,26 +1,26 @@
 @import "leaflet/dist/leaflet.css";
 
 :root {
-  --bg:               #080a0e;
-  --bg-alt:           #0d1016;
-  --surface:          #0f1218;
-  --surface-2:        #141920;
-  --glass:            rgba(10, 14, 22, 0.96);
-  --glass-border:     rgba(255, 255, 255, 0.07);
-  --border:           rgba(255, 255, 255, 0.07);
-  --border-strong:    rgba(255, 255, 255, 0.13);
+  --bg:               #f6f5f2;
+  --bg-alt:           #edece8;
+  --surface:          #ffffff;
+  --surface-2:        #f2f1ee;
+  --glass:            rgba(255, 255, 255, 0.95);
+  --glass-border:     rgba(0, 0, 0, 0.07);
+  --border:           rgba(0, 0, 0, 0.08);
+  --border-strong:    rgba(0, 0, 0, 0.14);
 
-  --text:             #e2e8f2;
-  --text-secondary:   #94a3b8;
-  --text-muted:       #55606e;
-  --text-dim:         #2d3748;
+  --text:             #0c1118;
+  --text-secondary:   #505868;
+  --text-muted:       #8a929e;
+  --text-dim:         #c4cad3;
 
-  --accent:           rgba(255, 255, 255, 0.75);
-  --accent-dark:      rgba(255, 255, 255, 0.45);
-  --accent-light:     #ffffff;
-  --accent-glow:      rgba(255, 255, 255, 0.08);
-  --link:             rgba(255, 255, 255, 0.7);
-  --link-hover:       #ffffff;
+  --accent:           #0c1118;
+  --accent-dark:      #000000;
+  --accent-light:     #1c2535;
+  --accent-glow:      rgba(12, 17, 24, 0.07);
+  --link:             #0c1118;
+  --link-hover:       #000000;
 
   --ok:               #22c55e;
   --ok-dark:          #16a34a;
@@ -82,8 +82,8 @@ a:hover { color: var(--link-hover); }
 
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.22); }
+::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.15); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.28); }
 
 main {
   height: 100vh;
@@ -188,7 +188,7 @@ main {
   width: 8px;
   height: 8px;
   padding: 0;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.18);
   border: none;
   border-radius: 50%;
   cursor: pointer;
@@ -196,7 +196,7 @@ main {
 }
 
 .side-dot:hover {
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(0, 0, 0, 0.45);
   transform: scale(1.25);
 }
 
@@ -235,7 +235,7 @@ main {
 .leaflet-container {
   height: 100%;
   width: 100%;
-  background: #181e2c;
+  background: #e8ebe6;
 }
 
 
@@ -688,12 +688,28 @@ main {
   font-weight: 400;
 }
 
+.upload-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 80px;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 60px;
+  align-items: start;
+}
+
+.upload-layout .flow-inner {
+  padding: 0;
+  max-width: none;
+  margin: 0;
+}
+
 .upload-form-card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   padding: 32px 36px;
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .seg {
@@ -909,8 +925,8 @@ main {
 }
 
 .btn:hover {
-  background: var(--accent-light);
-  box-shadow: 0 4px 20px var(--accent-glow);
+  background: var(--accent-dark);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
   transform: translateY(-1px);
 }
 
@@ -1567,8 +1583,8 @@ main {
 }
 
 .lock-badge {
-  background: rgba(10, 14, 22, 0.88);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 32px;
   padding: 12px 28px;
   font-size: 12px;
@@ -1576,7 +1592,7 @@ main {
   color: var(--text-muted);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
 }
@@ -1597,7 +1613,7 @@ main {
   font-size: 12px;
   font-weight: 600;
   font-family: inherit;
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.7);
   cursor: pointer;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -1614,7 +1630,7 @@ main {
 .map-expand-btn:hover {
   background: rgba(15, 18, 32, 0.94);
   border-color: rgba(255, 255, 255, 0.22);
-  color: var(--text);
+  color: rgba(255, 255, 255, 0.95);
   transform: translateX(-50%) translateY(-2px);
 }
 
@@ -1665,7 +1681,7 @@ main {
   cursor: pointer;
   font-size: 20px;
   line-height: 1;
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.6);
   font-family: inherit;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -1676,7 +1692,7 @@ main {
 .map-fullscreen-close:hover {
   background: rgba(20, 24, 40, 0.96);
   border-color: rgba(255, 255, 255, 0.22);
-  color: var(--text);
+  color: rgba(255, 255, 255, 0.95);
 }
 
 @media print {
