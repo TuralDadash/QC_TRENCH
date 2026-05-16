@@ -25,7 +25,7 @@ export type OverlayExtraction = {
 function runTesseract(
   imageBuf: Buffer,
   psm: number,
-  lang = "deu+eng",
+  lang = "eng",
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const proc = spawn("tesseract", [

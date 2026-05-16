@@ -79,7 +79,10 @@ function currentStep(phase: ReturnType<typeof useUpload>["phase"]): PhaseStep {
 
 function deriveCategory(p: Photo): Category {
   if (!p.analysis) return 2;
-  if (p.analysis.isDuplicate || p.analysis.gpsOnSite === false || !p.hasGps) return 4;
+  // Missing GPS alone does not demote — an address label or overlay
+  // timestamp still lets us locate the photo roughly. Only explicit
+  // off-site GPS (gpsOnSite === false) or a duplicate forces cat 4.
+  if (p.analysis.isDuplicate || p.analysis.gpsOnSite === false) return 4;
   if (p.analysis.trench && p.analysis.measuringStick) return 1;
   if (p.analysis.trench) return 2;
   if (p.analysis.measuringStick) return 3;
@@ -270,6 +273,10 @@ export default function FlowPage() {
   const mapSectionRef = useRef<HTMLElement>(null);
   const reportSectionRef = useRef<HTMLElement>(null);
   const prevAnalysedRef = useRef(0);
+  // Set when an upload finishes; consumed once analysis completes to fire
+  // the auto-PDF download. Avoids re-firing on page reloads where analysis
+  // was already complete from a previous session.
+  const pdfPendingRef = useRef(false);
   const [mapExpanded, setMapExpanded] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
   const [mapCatFilter, setMapCatFilter] = useState<"all"|"cat1"|"cat2"|"cat3"|"cat4"|"no-gps">("all");
@@ -340,6 +347,7 @@ export default function FlowPage() {
   // bug in store.ts (Invalid Date rejected by Postgres).
   useEffect(() => {
     if (phase.kind === "complete") {
+      pdfPendingRef.current = true;
       startProcess("backend");
       setTimeout(() => {
         mapSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -347,6 +355,43 @@ export default function FlowPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase.kind]);
+
+  // Auto-download both PDFs once the analysis kicked off by the upload
+  // completes. Gated by pdfPendingRef so revisiting the page after a
+  // previous run doesn't trigger another download.
+  useEffect(() => {
+    if (processPhase.kind !== "complete" || !pdfPendingRef.current) return;
+    pdfPendingRef.current = false;
+    const backend =
+      process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+    const download = async (endpoint: string, filename: string) => {
+      try {
+        const res = await fetch(`${backend}${endpoint}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        if (!res.ok) return;
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch {
+        // backend may be down — silently skip; user can still trigger manually
+      }
+    };
+    // Sequence the two downloads — back-to-back a.click() calls get
+    // throttled by Chrome/Firefox and only one file lands.
+    (async () => {
+      const stamp = new Date().toISOString().split("T")[0];
+      await download("/api/report/pdf", `trench-audit-${stamp}.pdf`);
+      await new Promise((r) => setTimeout(r, 400));
+      await download("/api/report/appendix.pdf", `trench-appendix-${stamp}.pdf`);
+    })();
+  }, [processPhase.kind]);
 
   useEffect(() => {
     if (analysedCount > 0 && prevAnalysedRef.current === 0) {
