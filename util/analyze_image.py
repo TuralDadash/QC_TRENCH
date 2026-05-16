@@ -26,6 +26,14 @@ class TrenchAnalysis(BaseModel):
     has_sand_bedding_confidence: int
     depth_cm: int | None
     depth_cm_confidence: int
+    # Geolocation overlay burned into the photo by a GPS camera app.
+    gps_present: bool
+    latitude: float | None
+    longitude: float | None
+    address_present: bool
+    address: str | None
+    datetime_present: bool
+    datetime: str | None
 
 
 def guess_mime_type(path: Path) -> str:

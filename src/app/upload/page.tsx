@@ -362,7 +362,9 @@ export default function UploadPage() {
               </tr>
             </thead>
             <tbody>
-              {results.map((r) => (
+              {results.map((r) => {
+                const geo = displayCoords(r);
+                return (
                 <tr key={r.id}>
                   <td>
                     <button
@@ -412,11 +414,18 @@ export default function UploadPage() {
                       <span className="muted">—</span>
                     )}
                   </td>
-                  <td className={r.hasGps ? "" : "muted"}>
-                    {r.latitude != null ? r.latitude.toFixed(5) : "—"}
+                  <td
+                    className={geo.lat != null ? "" : "muted"}
+                    title={geo.sourceLabel ?? undefined}
+                  >
+                    {geo.lat != null ? geo.lat.toFixed(6) : "—"}
+                    {geo.fromGemini ? <div className="dim">Gemini</div> : null}
                   </td>
-                  <td className={r.hasGps ? "" : "muted"}>
-                    {r.longitude != null ? r.longitude.toFixed(5) : "—"}
+                  <td
+                    className={geo.lon != null ? "" : "muted"}
+                    title={geo.sourceLabel ?? undefined}
+                  >
+                    {geo.lon != null ? geo.lon.toFixed(6) : "—"}
                   </td>
                   <td title={r.sourcePath}>
                     <div className="filename muted">
@@ -426,7 +435,8 @@ export default function UploadPage() {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
 
@@ -599,6 +609,14 @@ function renderAnalysis(r: Uploaded) {
             {a.depth_cm} cm
           </span>
         ) : null}
+        {a.gps_present && a.latitude != null && a.longitude != null ? (
+          <span
+            className="badge neutral"
+            title={`overlay GPS ${a.latitude.toFixed(5)}, ${a.longitude.toFixed(5)}`}
+          >
+            gps
+          </span>
+        ) : null}
       </div>
     );
   }
@@ -656,11 +674,60 @@ function renderAnalysisDetail(r: Uploaded) {
       </div>
       {a.addresses.length > 0 ? (
         <div>
-          <strong>Addresses:</strong> {a.addresses.join(" · ")}
+          <strong>Address sheet:</strong> {a.addresses.join(" · ")}
+        </div>
+      ) : null}
+      {a.gps_present || a.address_present || a.datetime_present ? (
+        <div className="analysis-detail">
+          <strong>Geolocation overlay</strong>
+          {a.gps_present && a.latitude != null && a.longitude != null ? (
+            <div>
+              <strong>GPS:</strong> {a.latitude.toFixed(6)},{" "}
+              {a.longitude.toFixed(6)}
+            </div>
+          ) : null}
+          {a.address_present && a.address ? (
+            <div>
+              <strong>Address:</strong> {a.address}
+            </div>
+          ) : null}
+          {a.datetime_present && a.datetime ? (
+            <div>
+              <strong>Taken:</strong> {a.datetime}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
   );
+}
+
+// Coordinates to show in the table: the upload pipeline's GPS (EXIF / overlay
+// OCR) when present, otherwise the coordinates Gemini read off the overlay.
+function displayCoords(r: Uploaded): {
+  lat: number | null;
+  lon: number | null;
+  fromGemini: boolean;
+  sourceLabel: string | null;
+} {
+  if (r.latitude != null && r.longitude != null) {
+    return {
+      lat: r.latitude,
+      lon: r.longitude,
+      fromGemini: false,
+      sourceLabel: r.gpsSource ? `GPS from ${r.gpsSource}` : null,
+    };
+  }
+  const a = r.analysis;
+  if (a?.gps_present && a.latitude != null && a.longitude != null) {
+    return {
+      lat: a.latitude,
+      lon: a.longitude,
+      fromGemini: true,
+      sourceLabel: "GPS from Gemini overlay analysis",
+    };
+  }
+  return { lat: null, lon: null, fromGemini: false, sourceLabel: null };
 }
 
 function tsSourceLabel(source: Uploaded["timestampSource"]) {

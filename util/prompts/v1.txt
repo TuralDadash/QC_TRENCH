@@ -24,6 +24,9 @@ For every detection, also return a **confidence score from 0 to 100** — your s
 - `addresses` — an **array** of every street address visible on the sheet, each transcribed **exactly as written** (preserve spelling, casing, and punctuation; do not translate or normalize). Use an empty array `[]` if no address is visible or legible.
 - `has_sand_bedding` + `has_sand_bedding_confidence`
 - `depth_cm` (integer, centimetres) + `depth_cm_confidence`
+- `gps_present`, `latitude`, `longitude` — GPS coordinates from the geolocation overlay (see "Geolocation overlay" below).
+- `address_present`, `address` — street address from the geolocation overlay.
+- `datetime_present`, `datetime` — capture date and time from the geolocation overlay.
 
 # How to read the depth
 
@@ -42,5 +45,23 @@ Rules for `depth_cm`:
 - If the horizontal reference and the trench edges look clearly tilted, foreshortened, or you can see the *top* of the horizontal stick (camera above) or its *underside* (camera below), the reading is affected by parallax.
 - In that case, read the value at the point where the horizontal reference meets the **near side of the vertical stick** (closest to the camera), not the far side, and **drop `depth_cm_confidence` to ≤40**.
 - If the parallax is severe (steep top-down or bottom-up angle, horizontal stick clearly not aligned with the true ground line), return `null` for `depth_cm` rather than guessing.
+
+# Geolocation overlay
+
+Many of these photos carry a **geolocation overlay** burned in by a GPS camera app (e.g. "GPS Map Camera", "Timestamp Camera"). It is *digital text drawn on top of the photo* — not a physical sign or sheet — usually along the top or bottom edge, often over a semi-transparent band, sometimes beside a small map thumbnail. It can show GPS coordinates, a street address, and a capture date/time. This is completely separate from the physical `address sheet` — do not confuse the two.
+
+Extract whatever the overlay shows:
+
+- **GPS coordinates** — a latitude/longitude pair, e.g. `46.56259349N 14.28908925E`.
+  - `gps_present`: true only if coordinates are visible in the overlay.
+  - `latitude` / `longitude`: signed decimal degrees. North and East are positive; South and West are negative (an `N`/`S`/`E`/`W` suffix gives the hemisphere). Both `null` if `gps_present` is false.
+- **Address** — a street address, e.g. `Untertöllernstraße 14, 9161 Maria Rain`. The overlay may split it across several lines or add locality / region / country lines (e.g. `Maria Rain`, `Klagenfurt-Land`, `Kärnten`, `Австрия`).
+  - `address_present`: true if any address text is visible in the overlay.
+  - `address`: the address transcribed exactly as written, joining a multi-line overlay into one comma-separated string. Do not translate or normalize. `null` if `address_present` is false.
+- **Date and time** — a capture timestamp, e.g. `30.08.2024 15:15:59` or `6 авг. 2024 г. 14:41:47` (the format and month names are locale-dependent).
+  - `datetime_present`: true if a date and time are visible in the overlay.
+  - `datetime`: normalised to ISO 8601, `YYYY-MM-DDTHH:MM:SS`. `null` if `datetime_present` is false.
+
+If the photo has no overlay at all, set `gps_present`, `address_present`, and `datetime_present` to false and the value fields to `null`. Only report overlay text that is actually legible — do not guess digits of a coordinate or characters of an address.
 
 When in doubt, answer false with a low confidence. Do not guess at addresses — if the text is unreadable or cut off, omit it.
