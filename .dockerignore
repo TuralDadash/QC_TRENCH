@@ -5,6 +5,7 @@ node_modules
 .env*.local
 data
 util/.venv
+**/__pycache__
 Dockerfile
 docker-compose.yml
 README.md

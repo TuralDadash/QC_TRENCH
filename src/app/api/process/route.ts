@@ -1,20 +1,22 @@
 import { NextRequest } from "next/server";
 import { spawn } from "child_process";
+import { promises as fs } from "fs";
 import path from "path";
 import {
   loadIndex,
-  mergeAnalysis,
+  mergeAnalysisRun,
   photoFilePath,
-  type AnalysisUpdate,
+  type AnalysisRun,
+  type AnalysisRunUpdate,
+  type BackendAssessment,
   type GeminiAnalysis,
   type PhotoRecord,
 } from "@/lib/store";
 
 export const runtime = "nodejs";
 
-// Each analysis spawns one `python analyze_image.py` subprocess, which makes a
-// single network call to Gemini. A handful in parallel keeps throughput up
-// without hammering the API; bump via env on faster keys.
+// Each analysis spawns one python subprocess that makes a single Gemini call.
+// A handful in parallel keeps throughput up without hammering the API.
 const GEMINI_CONCURRENCY = Math.max(
   1,
   Number(process.env.GEMINI_CONCURRENCY ?? 4),
@@ -22,18 +24,44 @@ const GEMINI_CONCURRENCY = Math.max(
 
 const ANALYSIS_TIMEOUT_MS = 120_000;
 
-// Defaults to the local dev venv; Docker sets PYTHON_BIN to the image's venv
-// (see Dockerfile) since the host venv isn't valid inside the container.
+// Defaults to the local dev venv; Docker sets PYTHON_BIN to the image's venv.
 const PYTHON =
   process.env.PYTHON_BIN ||
   path.join(process.cwd(), "util", ".venv", "bin", "python");
-const SCRIPT = path.join(process.cwd(), "util", "analyze_image.py");
-const PROMPT_FILE = path.join(process.cwd(), "util", "prompts", "v1.txt");
+const UTIL_DIR = path.join(process.cwd(), "util");
+const ANALYZE_SCRIPT = path.join(UTIL_DIR, "analyze_image.py");
+const BACKEND_SCRIPT = path.join(UTIL_DIR, "backend_analyze.py");
+const PROMPTS_DIR = path.join(UTIL_DIR, "prompts");
 
-function runAnalysis(photoPath: string): Promise<GeminiAnalysis> {
+type ResolvedPath =
+  | { kind: "util"; pathId: string; promptFile: string }
+  | { kind: "backend"; pathId: string };
+
+// A path id is either "backend" or "util:<prompt-file>.txt".
+async function resolvePath(pathId: string): Promise<ResolvedPath | null> {
+  if (pathId === "backend") return { kind: "backend", pathId };
+  if (pathId.startsWith("util:")) {
+    const file = pathId.slice("util:".length);
+    // Guard against traversal — only a bare .txt filename is accepted.
+    if (!/^[\w.\- ]+\.txt$/.test(file)) return null;
+    const promptFile = path.join(PROMPTS_DIR, file);
+    try {
+      await fs.access(promptFile);
+    } catch {
+      return null;
+    }
+    return { kind: "util", pathId, promptFile };
+  }
+  return null;
+}
+
+function runScript(args: string[]): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(PYTHON, [SCRIPT, photoPath, "-f", PROMPT_FILE], {
-      env: process.env,
+    // PYTHONDONTWRITEBYTECODE keeps __pycache__ out of the bind-mounted
+    // util/ and backend/ dirs — stray .pyc files there trip the Next dev
+    // file-watcher and crash the dev server.
+    const proc = spawn(PYTHON, args, {
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" },
     });
     let out = "";
     let err = "";
@@ -59,23 +87,36 @@ function runAnalysis(photoPath: string): Promise<GeminiAnalysis> {
           return;
         }
         try {
-          resolve(JSON.parse(out.trim()) as GeminiAnalysis);
+          resolve(JSON.parse(out.trim()));
         } catch {
-          reject(
-            new Error(`could not parse Gemini output: ${out.slice(0, 200)}`),
-          );
+          reject(new Error(`could not parse output: ${out.slice(0, 200)}`));
         }
       }),
     );
   });
 }
 
-// Analyse every uploaded photo that doesn't yet have a Gemini result. Streams
-// NDJSON progress so the UI can update row-by-row, and persists each result as
-// it lands so an interrupted run keeps the work already paid for.
-export async function POST(_req: NextRequest) {
+function analyse(resolved: ResolvedPath, photoPath: string): Promise<unknown> {
+  if (resolved.kind === "backend") {
+    return runScript([BACKEND_SCRIPT, photoPath]);
+  }
+  return runScript([ANALYZE_SCRIPT, photoPath, "-f", resolved.promptFile]);
+}
+
+// Analyse every photo that has no result yet for the requested path. Streams
+// NDJSON progress and persists each run as it lands.
+export async function POST(req: NextRequest) {
+  const pathId = req.nextUrl.searchParams.get("path") || "util:v1.txt";
+  const resolved = await resolvePath(pathId);
+  if (!resolved) {
+    return new Response(
+      JSON.stringify({ error: `unknown analysis path: ${pathId}` }),
+      { status: 400 },
+    );
+  }
+
   const index = await loadIndex();
-  const pending = index.filter((r) => !r.analysis);
+  const pending = index.filter((r) => !r.analyses?.[pathId]);
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -84,13 +125,13 @@ export async function POST(_req: NextRequest) {
         controller.enqueue(enc.encode(JSON.stringify(obj) + "\n"));
       };
 
-      write({ event: "start", total: pending.length });
+      write({ event: "start", pathId, total: pending.length });
 
-      // Serialise persistence — workers run concurrently but mergeAnalysis
-      // does a read-modify-write of the whole index, so chain the saves.
+      // Serialise persistence — workers run concurrently but mergeAnalysisRun
+      // does a read-modify-write of the whole index.
       let saveChain: Promise<unknown> = Promise.resolve();
-      const persist = (update: AnalysisUpdate) => {
-        saveChain = saveChain.then(() => mergeAnalysis([update]));
+      const persist = (update: AnalysisRunUpdate) => {
+        saveChain = saveChain.then(() => mergeAnalysisRun([update]));
         return saveChain;
       };
 
@@ -104,26 +145,31 @@ export async function POST(_req: NextRequest) {
             if (i >= pending.length) break;
             const rec = pending[i];
 
-            let analysis: GeminiAnalysis | null = null;
-            let analysisError: string | null = null;
+            let result: unknown = null;
+            let error: string | null = null;
             try {
-              analysis = await runAnalysis(photoFilePath(rec.filename));
+              result = await analyse(resolved, photoFilePath(rec.filename));
             } catch (e) {
-              analysisError = (e as Error).message;
+              error = (e as Error).message;
             }
-            const analyzedAt = analysis ? new Date().toISOString() : null;
+            const run: AnalysisRun = {
+              pathId,
+              kind: resolved.kind,
+              analyzedAt: result ? new Date().toISOString() : null,
+              error,
+              result: result as GeminiAnalysis | BackendAssessment | null,
+            };
 
-            await persist({ id: rec.id, analysis, analyzedAt, analysisError });
+            await persist({ id: rec.id, run });
 
             done++;
             const updated: PhotoRecord = {
               ...rec,
-              analysis,
-              analyzedAt,
-              analysisError,
+              analyses: { ...(rec.analyses ?? {}), [pathId]: run },
             };
             write({
               event: "analyzed",
+              pathId,
               done,
               total: pending.length,
               record: updated,
@@ -134,7 +180,7 @@ export async function POST(_req: NextRequest) {
       await Promise.all(workers);
       await saveChain;
 
-      write({ event: "done" });
+      write({ event: "done", pathId });
       controller.close();
     },
   });

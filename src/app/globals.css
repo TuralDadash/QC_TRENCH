@@ -509,6 +509,15 @@ main {
   border-bottom: 1px solid #222831;
 }
 
+.results th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.results th.sortable:hover {
+  color: #6ea8fe;
+}
+
 .results .ok,
 .summary .ok {
   color: #4ade80;

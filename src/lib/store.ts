@@ -24,6 +24,55 @@ export type GeminiAnalysis = {
   datetime: string | null;
 };
 
+// Shape returned by util/backend_analyze.py — mirrors the PhotoAssessment
+// pydantic model in backend/app/vlm.py (the "alternative" analysis path).
+export type BackendAssessment = {
+  is_construction_photo: boolean;
+  is_construction_photo_confidence: number;
+  is_likely_ai_generated: boolean;
+  is_likely_ai_generated_confidence: number;
+  overall_confidence: number;
+  duct: { visible: boolean; confidence: number; notes: string };
+  depth: {
+    ruler_visible: boolean;
+    depth_value_cm: number | null;
+    depth_range_cm: number[] | null;
+    uncertain: boolean;
+    confidence: number;
+    notes: string;
+  };
+  sand_bedding: {
+    status: "sand" | "uncertain" | "not_sand";
+    confidence: number;
+  };
+  burnt_in_metadata: {
+    gps_lat: number | null;
+    gps_lon: number | null;
+    timestamp_iso: string | null;
+    raw_text: string;
+    confidence: number;
+  };
+  address_label: { found: boolean; text: string | null; confidence: number };
+  privacy_flags: {
+    faces_visible: boolean;
+    license_plates_visible: boolean;
+  };
+  pipe_end_seals: {
+    status: "sealed" | "unsealed" | "not_visible";
+    confidence: number;
+  };
+};
+
+// One analysis run of a photo through a specific path. `kind` discriminates
+// the `result` shape: "util" -> GeminiAnalysis, "backend" -> BackendAssessment.
+export type AnalysisRun = {
+  pathId: string;
+  kind: "util" | "backend";
+  analyzedAt: string | null;
+  error: string | null;
+  result: GeminiAnalysis | BackendAssessment | null;
+};
+
 export type PhotoRecord = {
   id: string;
   filename: string;
@@ -51,17 +100,48 @@ export type PhotoRecord = {
   overlayTakenAt: string | null;
   overlayFound: boolean;
   overlayDetected: boolean;
+  // Analysis runs keyed by path id ("util:v1.txt", "backend", ...). A photo
+  // can be analysed by several paths; each result is kept for comparison.
+  analyses?: Record<string, AnalysisRun>;
+};
+
+export type AnalysisRunUpdate = {
+  id: string;
+  run: AnalysisRun;
+};
+
+// Old single-analysis records (pre path-comparison) stored a flat `analysis`.
+type LegacyRecord = PhotoRecord & {
   analysis?: GeminiAnalysis | null;
   analyzedAt?: string | null;
   analysisError?: string | null;
 };
 
-export type AnalysisUpdate = {
-  id: string;
-  analysis: GeminiAnalysis | null;
-  analyzedAt: string | null;
-  analysisError: string | null;
-};
+function migrateRecord(raw: LegacyRecord): PhotoRecord {
+  if (raw.analyses || raw.analysis === undefined) {
+    const { analysis, analyzedAt, analysisError, ...rest } = raw;
+    void analysis;
+    void analyzedAt;
+    void analysisError;
+    return rest;
+  }
+  const { analysis, analyzedAt, analysisError, ...rest } = raw;
+  const hadRun = analysis != null || analysisError != null;
+  return {
+    ...rest,
+    analyses: hadRun
+      ? {
+          "util:v1.txt": {
+            pathId: "util:v1.txt",
+            kind: "util",
+            analyzedAt: analyzedAt ?? null,
+            error: analysisError ?? null,
+            result: analysis ?? null,
+          },
+        }
+      : {},
+  };
+}
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
 const PHOTOS_DIR = path.join(DATA_DIR, "photos");
@@ -75,7 +155,8 @@ export async function loadIndex(): Promise<PhotoRecord[]> {
   await ensureDirs();
   try {
     const raw = await fs.readFile(INDEX_FILE, "utf8");
-    return JSON.parse(raw) as PhotoRecord[];
+    const parsed = JSON.parse(raw) as LegacyRecord[];
+    return parsed.map(migrateRecord);
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw err;
@@ -107,20 +188,23 @@ export async function appendRecords(newOnes: PhotoRecord[]) {
   return merged;
 }
 
-// Patch Gemini analysis results onto existing records by id. Reloads the
-// index each call so it's safe to interleave with uploads appending records.
-export async function mergeAnalysis(updates: AnalysisUpdate[]) {
+// Patch analysis runs onto existing records by id, keyed by path id so
+// results from different paths coexist. Reloads the index each call so it's
+// safe to interleave with uploads appending records.
+export async function mergeAnalysisRun(updates: AnalysisRunUpdate[]) {
   const existing = await loadIndex();
-  const byId = new Map(updates.map((u) => [u.id, u]));
+  const byId = new Map<string, AnalysisRun[]>();
+  for (const u of updates) {
+    const list = byId.get(u.id) ?? [];
+    list.push(u.run);
+    byId.set(u.id, list);
+  }
   const merged = existing.map((rec) => {
-    const u = byId.get(rec.id);
-    if (!u) return rec;
-    return {
-      ...rec,
-      analysis: u.analysis,
-      analyzedAt: u.analyzedAt,
-      analysisError: u.analysisError,
-    };
+    const runs = byId.get(rec.id);
+    if (!runs) return rec;
+    const analyses = { ...(rec.analyses ?? {}) };
+    for (const run of runs) analyses[run.pathId] = run;
+    return { ...rec, analyses };
   });
   await saveIndex(merged);
   return merged;

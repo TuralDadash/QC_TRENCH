@@ -4,14 +4,30 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   formatEta,
   useUpload,
+  type AnalysisPath,
+  type AnalysisRun,
+  type BackendAssessment,
+  type GeminiAnalysis,
   type Uploaded,
 } from "@/context/UploadProvider";
 
 type Mode = "files" | "folder" | "archive";
 
+type PreviewTarget = { photoId: string; pathId: string | null };
+
+type Row = { photo: Uploaded; run: AnalysisRun | null; rowKey: string };
+
 export default function UploadPage() {
-  const { phase, results, skipped, processPhase, startUpload, startProcess, resetAll } =
-    useUpload();
+  const {
+    phase,
+    results,
+    skipped,
+    processPhase,
+    availablePaths,
+    startUpload,
+    startProcess,
+    resetAll,
+  } = useUpload();
 
   const filesRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
@@ -24,18 +40,28 @@ export default function UploadPage() {
   const [limit, setLimit] = useState<number>(100);
   const [files, setFiles] = useState<File[]>([]);
   const [dragOver, setDragOver] = useState(false);
-  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [preview, setPreview] = useState<PreviewTarget | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [selectedPath, setSelectedPath] = useState("");
+  const [sortByName, setSortByName] = useState(false);
+
+  // Default the dropdown once the path list loads.
+  useEffect(() => {
+    if (selectedPath || availablePaths.length === 0) return;
+    const def =
+      availablePaths.find((p) => p.id === "util:v1.txt") ?? availablePaths[0];
+    setSelectedPath(def.id);
+  }, [availablePaths, selectedPath]);
 
   // Close preview on Escape.
   useEffect(() => {
-    if (!previewId) return;
+    if (!preview) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setPreviewId(null);
+      if (e.key === "Escape") setPreview(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [previewId]);
+  }, [preview]);
 
   function pickFiles(list: FileList | null) {
     if (!list) return;
@@ -84,9 +110,33 @@ export default function UploadPage() {
     const exifNoGps = results.filter((r) => r.hasExif && !r.hasGps).length;
     const noMeta = results.filter((r) => !r.hasExif).length;
     const withTime = results.filter((r) => r.takenAt).length;
-    const analyzed = results.filter((r) => r.analysis).length;
+    const analyzed = results.filter(
+      (r) => r.analyses && Object.keys(r.analyses).length > 0,
+    ).length;
     return { total, withGps, exifNoGps, noMeta, withTime, analyzed };
   }, [results]);
+
+  // One row per (photo, analysis run); photos with no run get a single empty
+  // row. Sorting the photo list keeps a photo's rows contiguous.
+  const rows = useMemo<Row[]>(() => {
+    const photos = [...results];
+    if (sortByName) {
+      photos.sort((a, b) => a.originalName.localeCompare(b.originalName));
+    }
+    const out: Row[] = [];
+    for (const photo of photos) {
+      const runs = photo.analyses ? Object.values(photo.analyses) : [];
+      if (runs.length === 0) {
+        out.push({ photo, run: null, rowKey: `${photo.id}::none` });
+      } else {
+        runs.sort((a, b) => a.pathId.localeCompare(b.pathId));
+        for (const run of runs) {
+          out.push({ photo, run, rowKey: `${photo.id}::${run.pathId}` });
+        }
+      }
+    }
+    return out;
+  }, [results, sortByName]);
 
   const processBusy = processPhase.kind === "running";
 
@@ -100,7 +150,7 @@ export default function UploadPage() {
       processPhase.total > 0
         ? (processPhase.done / processPhase.total) * 100
         : 0;
-    primaryLabel = `Analyzing with Gemini — ${processPhase.done} / ${processPhase.total}`;
+    primaryLabel = `Analyzing — ${processPhase.done} / ${processPhase.total}`;
     const eta = formatEta(processPhase.etaMs);
     secondaryLabel = eta || "Calculating remaining time…";
   } else if (processPhase.kind === "complete") {
@@ -139,8 +189,7 @@ export default function UploadPage() {
 
   const busy = uploadBusy || processBusy;
 
-  const indeterminate =
-    phase.kind === "preparing" && !phase.extracting;
+  const indeterminate = phase.kind === "preparing" && !phase.extracting;
 
   const dropLabel =
     mode === "folder"
@@ -149,7 +198,13 @@ export default function UploadPage() {
         ? "Click to pick a .zip archive"
         : "Click or drop image files here";
 
-  const preview = previewId ? results.find((r) => r.id === previewId) : null;
+  const previewPhoto = preview
+    ? results.find((r) => r.id === preview.photoId) ?? null
+    : null;
+  const previewRun =
+    previewPhoto && preview?.pathId
+      ? previewPhoto.analyses?.[preview.pathId] ?? null
+      : null;
 
   return (
     <div className="upload-page wide">
@@ -286,11 +341,24 @@ export default function UploadPage() {
             ) : null}
           </div>
         )}
+        <select
+          value={selectedPath}
+          onChange={(e) => setSelectedPath(e.target.value)}
+          disabled={busy || availablePaths.length === 0}
+          title="Analysis path the Process run will use"
+          style={selectStyle}
+        >
+          {availablePaths.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
         <button
           className="btn"
-          onClick={() => startProcess()}
-          disabled={busy || results.length === 0}
-          title="Send every un-analyzed photo to Gemini for trench analysis"
+          onClick={() => selectedPath && startProcess(selectedPath)}
+          disabled={busy || results.length === 0 || !selectedPath}
+          title="Analyze every photo not yet processed by the selected path"
         >
           {processBusy ? (
             <>
@@ -351,7 +419,14 @@ export default function UploadPage() {
             <thead>
               <tr>
                 <th></th>
-                <th>File</th>
+                <th
+                  className="sortable"
+                  onClick={() => setSortByName((s) => !s)}
+                  title="Sort by file name to group a photo's analysis paths"
+                >
+                  File {sortByName ? "▲" : "⇅"}
+                </th>
+                <th>Path</th>
                 <th>Metadata</th>
                 <th>Overlay</th>
                 <th>Analysis</th>
@@ -362,79 +437,105 @@ export default function UploadPage() {
               </tr>
             </thead>
             <tbody>
-              {results.map((r) => {
-                const geo = displayCoords(r);
+              {rows.map(({ photo: r, run, rowKey }) => {
+                const geo = displayCoords(r, run);
                 return (
-                <tr key={r.id}>
-                  <td>
-                    <button
-                      type="button"
-                      className="thumb-btn"
-                      onClick={() => setPreviewId(r.id)}
-                      title="Click to enlarge"
-                    >
-                      <img
-                        src={`/api/photos/${r.id}`}
-                        alt=""
-                        className="row-thumb"
-                      />
-                    </button>
-                  </td>
-                  <td title={r.originalName}>
-                    <div className="filename">{r.originalName}</div>
-                    {r.width && r.height ? (
-                      <div className="dim">
-                        {r.width} × {r.height}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td>{renderMetadataBadge(r)}</td>
-                  <td>
-                    {r.overlayApp || r.overlayDetected ? (
-                      <>
-                        <div className="dim">{r.overlayApp ?? "detected"}</div>
-                        {r.overlayAddress ? (
-                          <div className="filename" title={r.overlayAddress}>
-                            {r.overlayAddress}
+                  <tr key={rowKey}>
+                    <td>
+                      <button
+                        type="button"
+                        className="thumb-btn"
+                        onClick={() =>
+                          setPreview({
+                            photoId: r.id,
+                            pathId: run?.pathId ?? null,
+                          })
+                        }
+                        title="Click to enlarge"
+                      >
+                        <img
+                          src={`/api/photos/${r.id}`}
+                          alt=""
+                          className="row-thumb"
+                        />
+                      </button>
+                    </td>
+                    <td title={r.originalName}>
+                      <div className="filename">{r.originalName}</div>
+                      {r.width && r.height ? (
+                        <div className="dim">
+                          {r.width} × {r.height}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td>
+                      {run ? (
+                        <span
+                          className={`badge ${run.kind === "backend" ? "neutral" : "off"}`}
+                          title={run.pathId}
+                        >
+                          {shortPath(run.pathId)}
+                        </span>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    <td>{renderMetadataBadge(r)}</td>
+                    <td>
+                      {r.overlayApp || r.overlayDetected ? (
+                        <>
+                          <div className="dim">
+                            {r.overlayApp ?? "detected"}
                           </div>
-                        ) : null}
-                      </>
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
-                  </td>
-                  <td>{renderAnalysis(r)}</td>
-                  <td>
-                    {r.takenAt ? (
-                      <>
-                        <div>{new Date(r.takenAt).toLocaleString()}</div>
-                        <div className="dim">{tsSourceLabel(r.timestampSource)}</div>
-                      </>
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
-                  </td>
-                  <td
-                    className={geo.lat != null ? "" : "muted"}
-                    title={geo.sourceLabel ?? undefined}
-                  >
-                    {geo.lat != null ? geo.lat.toFixed(6) : "—"}
-                    {geo.fromGemini ? <div className="dim">Gemini</div> : null}
-                  </td>
-                  <td
-                    className={geo.lon != null ? "" : "muted"}
-                    title={geo.sourceLabel ?? undefined}
-                  >
-                    {geo.lon != null ? geo.lon.toFixed(6) : "—"}
-                  </td>
-                  <td title={r.sourcePath}>
-                    <div className="filename muted">
-                      {r.sourcePath && r.sourcePath !== r.originalName
-                        ? r.sourcePath
-                        : "—"}
-                    </div>
-                  </td>
-                </tr>
+                          {r.overlayAddress ? (
+                            <div
+                              className="filename"
+                              title={r.overlayAddress}
+                            >
+                              {r.overlayAddress}
+                            </div>
+                          ) : null}
+                        </>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    <td>{renderAnalysis(run)}</td>
+                    <td>
+                      {r.takenAt ? (
+                        <>
+                          <div>{new Date(r.takenAt).toLocaleString()}</div>
+                          <div className="dim">
+                            {tsSourceLabel(r.timestampSource)}
+                          </div>
+                        </>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    <td
+                      className={geo.lat != null ? "" : "muted"}
+                      title={geo.sourceLabel ?? undefined}
+                    >
+                      {geo.lat != null ? geo.lat.toFixed(6) : "—"}
+                      {geo.fromAnalysis ? (
+                        <div className="dim">analysis</div>
+                      ) : null}
+                    </td>
+                    <td
+                      className={geo.lon != null ? "" : "muted"}
+                      title={geo.sourceLabel ?? undefined}
+                    >
+                      {geo.lon != null ? geo.lon.toFixed(6) : "—"}
+                    </td>
+                    <td title={r.sourcePath}>
+                      <div className="filename muted">
+                        {r.sourcePath && r.sourcePath !== r.originalName
+                          ? r.sourcePath
+                          : "—"}
+                      </div>
+                    </td>
+                  </tr>
                 );
               })}
             </tbody>
@@ -457,10 +558,10 @@ export default function UploadPage() {
         </div>
       )}
 
-      {preview && (
+      {previewPhoto && (
         <div
           className="modal-backdrop"
-          onClick={() => setPreviewId(null)}
+          onClick={() => setPreview(null)}
           role="dialog"
           aria-modal="true"
         >
@@ -468,55 +569,65 @@ export default function UploadPage() {
             <button
               type="button"
               className="modal-close"
-              onClick={() => setPreviewId(null)}
+              onClick={() => setPreview(null)}
               aria-label="Close"
             >
               ×
             </button>
             <img
-              src={`/api/photos/${preview.id}`}
-              alt={preview.originalName}
+              src={`/api/photos/${previewPhoto.id}`}
+              alt={previewPhoto.originalName}
               className="modal-img"
             />
             <div className="modal-meta">
-              <div className="modal-title">{preview.originalName}</div>
+              <div className="modal-title">{previewPhoto.originalName}</div>
               <div className="modal-row">
-                {renderMetadataBadge(preview)}
-                {preview.overlayApp ? (
+                {renderMetadataBadge(previewPhoto)}
+                {previewPhoto.overlayApp ? (
                   <span className="badge ok" style={{ marginLeft: 8 }}>
-                    {preview.overlayApp}
+                    {previewPhoto.overlayApp}
                   </span>
                 ) : null}
               </div>
-              {preview.takenAt ? (
+              {previewPhoto.takenAt ? (
                 <div>
                   <strong>Taken:</strong>{" "}
-                  {new Date(preview.takenAt).toLocaleString()}{" "}
+                  {new Date(previewPhoto.takenAt).toLocaleString()}{" "}
                   <span className="dim">
-                    ({tsSourceLabel(preview.timestampSource)})
+                    ({tsSourceLabel(previewPhoto.timestampSource)})
                   </span>
                 </div>
               ) : null}
-              {preview.latitude != null && preview.longitude != null ? (
+              {previewPhoto.latitude != null &&
+              previewPhoto.longitude != null ? (
                 <div>
-                  <strong>GPS:</strong> {preview.latitude.toFixed(6)},{" "}
-                  {preview.longitude.toFixed(6)}{" "}
-                  <span className="dim">(source: {preview.gpsSource})</span>
+                  <strong>GPS:</strong> {previewPhoto.latitude.toFixed(6)},{" "}
+                  {previewPhoto.longitude.toFixed(6)}{" "}
+                  <span className="dim">
+                    (source: {previewPhoto.gpsSource})
+                  </span>
                 </div>
               ) : null}
-              {preview.overlayAddress ? (
+              {previewPhoto.overlayAddress ? (
                 <div>
-                  <strong>Overlay address:</strong> {preview.overlayAddress}
+                  <strong>Overlay address:</strong>{" "}
+                  {previewPhoto.overlayAddress}
                 </div>
               ) : null}
-              {renderAnalysisDetail(preview)}
+              {preview?.pathId ? (
+                <div className="dim">
+                  Analysis path: {pathLabelOf(preview.pathId, availablePaths)}
+                </div>
+              ) : null}
+              {renderAnalysisDetail(previewRun)}
               <div className="dim">
-                {preview.width && preview.height
-                  ? `${preview.width} × ${preview.height} · `
+                {previewPhoto.width && previewPhoto.height
+                  ? `${previewPhoto.width} × ${previewPhoto.height} · `
                   : ""}
-                {formatSize(preview.size)}
-                {preview.sourcePath && preview.sourcePath !== preview.originalName
-                  ? ` · ${preview.sourcePath}`
+                {formatSize(previewPhoto.size)}
+                {previewPhoto.sourcePath &&
+                previewPhoto.sourcePath !== previewPhoto.originalName
+                  ? ` · ${previewPhoto.sourcePath}`
                   : ""}
               </div>
             </div>
@@ -569,77 +680,127 @@ function renderMetadataBadge(r: Uploaded) {
   );
 }
 
-function analysisFlag(label: string, on: boolean, confidence: number) {
+function flagBadge(label: string, on: boolean, title: string) {
   return (
-    <span
-      className={`badge ${on ? "ok" : "off"}`}
-      title={`${on ? "detected" : "not detected"} · confidence ${confidence}%`}
-    >
+    <span className={`badge ${on ? "ok" : "off"}`} title={title}>
       {label}
     </span>
   );
 }
 
-function renderAnalysis(r: Uploaded) {
-  if (r.analysis) {
-    const a = r.analysis;
+// --- Analysis cell (compact, table) -------------------------------------
+
+function renderAnalysis(run: AnalysisRun | null) {
+  if (!run) return <span className="muted">—</span>;
+  if (run.error) {
     return (
-      <div className="analysis-cell">
-        {analysisFlag("trench", a.has_trench, a.has_trench_confidence)}
-        {analysisFlag(
-          "stick",
-          a.has_vertical_measuring_stick,
-          a.has_vertical_measuring_stick_confidence,
-        )}
-        {analysisFlag(
-          "sheet",
-          a.has_address_sheet,
-          a.has_address_sheet_confidence,
-        )}
-        {analysisFlag(
-          "sand",
-          a.has_sand_bedding,
-          a.has_sand_bedding_confidence,
-        )}
-        {a.depth_cm != null ? (
-          <span
-            className="badge neutral"
-            title={`depth confidence ${a.depth_cm_confidence}%`}
-          >
-            {a.depth_cm} cm
-          </span>
-        ) : null}
-        {a.gps_present && a.latitude != null && a.longitude != null ? (
-          <span
-            className="badge neutral"
-            title={`overlay GPS ${a.latitude.toFixed(5)}, ${a.longitude.toFixed(5)}`}
-          >
-            gps
-          </span>
-        ) : null}
-      </div>
-    );
-  }
-  if (r.analysisError) {
-    return (
-      <span className="badge err" title={r.analysisError}>
+      <span className="badge err" title={run.error}>
         failed
       </span>
     );
   }
-  return <span className="muted">—</span>;
+  if (!run.result) return <span className="muted">—</span>;
+  if (run.kind === "util") {
+    return renderUtilCell(run.result as GeminiAnalysis);
+  }
+  return renderBackendCell(run.result as BackendAssessment);
 }
 
-function renderAnalysisDetail(r: Uploaded) {
-  if (r.analysisError) {
+function renderUtilCell(a: GeminiAnalysis) {
+  return (
+    <div className="analysis-cell">
+      {flagBadge("trench", a.has_trench, `confidence ${a.has_trench_confidence}%`)}
+      {flagBadge(
+        "stick",
+        a.has_vertical_measuring_stick,
+        `confidence ${a.has_vertical_measuring_stick_confidence}%`,
+      )}
+      {flagBadge(
+        "sheet",
+        a.has_address_sheet,
+        `confidence ${a.has_address_sheet_confidence}%`,
+      )}
+      {flagBadge(
+        "sand",
+        a.has_sand_bedding,
+        `confidence ${a.has_sand_bedding_confidence}%`,
+      )}
+      {a.depth_cm != null ? (
+        <span
+          className="badge neutral"
+          title={`depth confidence ${a.depth_cm_confidence}%`}
+        >
+          {a.depth_cm} cm
+        </span>
+      ) : null}
+      {a.gps_present && a.latitude != null && a.longitude != null ? (
+        <span
+          className="badge neutral"
+          title={`overlay GPS ${a.latitude.toFixed(5)}, ${a.longitude.toFixed(5)}`}
+        >
+          gps
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function renderBackendCell(a: BackendAssessment) {
+  const pc = (c: number) => `confidence ${Math.round(c * 100)}%`;
+  return (
+    <div className="analysis-cell">
+      {flagBadge("duct", a.duct.visible, pc(a.duct.confidence))}
+      {flagBadge("ruler", a.depth.ruler_visible, pc(a.depth.confidence))}
+      {flagBadge(
+        "sand",
+        a.sand_bedding.status === "sand",
+        `${a.sand_bedding.status} · ${pc(a.sand_bedding.confidence)}`,
+      )}
+      {a.depth.depth_value_cm != null ? (
+        <span className="badge neutral" title={pc(a.depth.confidence)}>
+          {a.depth.depth_value_cm} cm
+        </span>
+      ) : null}
+      {a.burnt_in_metadata.gps_lat != null &&
+      a.burnt_in_metadata.gps_lon != null ? (
+        <span
+          className="badge neutral"
+          title={`overlay GPS ${a.burnt_in_metadata.gps_lat.toFixed(5)}, ${a.burnt_in_metadata.gps_lon.toFixed(5)}`}
+        >
+          gps
+        </span>
+      ) : null}
+      {a.is_likely_ai_generated ? (
+        <span
+          className="badge err"
+          title={pc(a.is_likely_ai_generated_confidence)}
+        >
+          AI?
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+// --- Analysis detail (modal) --------------------------------------------
+
+function renderAnalysisDetail(run: AnalysisRun | null) {
+  if (!run) return null;
+  if (run.error) {
     return (
       <div className="err" style={{ fontSize: 12 }}>
-        Gemini analysis failed: {r.analysisError}
+        Analysis failed: {run.error}
       </div>
     );
   }
-  if (!r.analysis) return null;
-  const a = r.analysis;
+  if (!run.result) return null;
+  if (run.kind === "util") {
+    return renderUtilDetail(run.result as GeminiAnalysis);
+  }
+  return renderBackendDetail(run.result as BackendAssessment);
+}
+
+function renderUtilDetail(a: GeminiAnalysis) {
   const row = (label: string, on: boolean, confidence: number) => (
     <div className="modal-row">
       <span className={`badge ${on ? "ok" : "off"}`}>{on ? "yes" : "no"}</span>
@@ -702,32 +863,166 @@ function renderAnalysisDetail(r: Uploaded) {
   );
 }
 
-// Coordinates to show in the table: the upload pipeline's GPS (EXIF / overlay
-// OCR) when present, otherwise the coordinates Gemini read off the overlay.
-function displayCoords(r: Uploaded): {
+function renderBackendDetail(a: BackendAssessment) {
+  const pct = (c: number) => `${Math.round(c * 100)}%`;
+  const row = (label: string, on: boolean, confidence: number) => (
+    <div className="modal-row">
+      <span className={`badge ${on ? "ok" : "off"}`}>{on ? "yes" : "no"}</span>
+      <span>
+        {label} <span className="dim">({pct(confidence)} confidence)</span>
+      </span>
+    </div>
+  );
+  const m = a.burnt_in_metadata;
+  return (
+    <div className="analysis-detail">
+      <strong>Backend assessment</strong>
+      {row(
+        "Construction photo",
+        a.is_construction_photo,
+        a.is_construction_photo_confidence,
+      )}
+      {row("Duct visible", a.duct.visible, a.duct.confidence)}
+      {row("Ruler visible", a.depth.ruler_visible, a.depth.confidence)}
+      <div className="modal-row">
+        <span className="badge neutral">
+          {a.depth.depth_value_cm != null
+            ? `${a.depth.depth_value_cm} cm`
+            : a.depth.depth_range_cm
+              ? `${a.depth.depth_range_cm[0]}–${a.depth.depth_range_cm[1]} cm`
+              : "—"}
+        </span>
+        <span>
+          Trench depth{" "}
+          <span className="dim">
+            ({pct(a.depth.confidence)} confidence
+            {a.depth.uncertain ? ", uncertain" : ""})
+          </span>
+        </span>
+      </div>
+      <div className="modal-row">
+        <span
+          className={`badge ${a.sand_bedding.status === "sand" ? "ok" : "off"}`}
+        >
+          {a.sand_bedding.status}
+        </span>
+        <span>
+          Sand bedding{" "}
+          <span className="dim">
+            ({pct(a.sand_bedding.confidence)} confidence)
+          </span>
+        </span>
+      </div>
+      {row(
+        "AI-generated suspicion",
+        a.is_likely_ai_generated,
+        a.is_likely_ai_generated_confidence,
+      )}
+      <div className="modal-row">
+        <span
+          className={`badge ${a.pipe_end_seals.status === "sealed" ? "ok" : "off"}`}
+        >
+          {a.pipe_end_seals.status}
+        </span>
+        <span>
+          Pipe end seals{" "}
+          <span className="dim">
+            ({pct(a.pipe_end_seals.confidence)} confidence)
+          </span>
+        </span>
+      </div>
+      {a.address_label.found && a.address_label.text ? (
+        <div>
+          <strong>Address label:</strong> {a.address_label.text}
+        </div>
+      ) : null}
+      {m.gps_lat != null || m.timestamp_iso || m.raw_text ? (
+        <div className="analysis-detail">
+          <strong>Burnt-in metadata</strong>
+          {m.gps_lat != null && m.gps_lon != null ? (
+            <div>
+              <strong>GPS:</strong> {m.gps_lat.toFixed(6)},{" "}
+              {m.gps_lon.toFixed(6)}
+            </div>
+          ) : null}
+          {m.timestamp_iso ? (
+            <div>
+              <strong>Taken:</strong> {m.timestamp_iso}
+            </div>
+          ) : null}
+          {m.raw_text ? <div className="dim">{m.raw_text}</div> : null}
+        </div>
+      ) : null}
+      {a.privacy_flags.faces_visible ||
+      a.privacy_flags.license_plates_visible ? (
+        <div className="dim">
+          Privacy:{" "}
+          {[
+            a.privacy_flags.faces_visible && "faces",
+            a.privacy_flags.license_plates_visible && "license plates",
+          ]
+            .filter(Boolean)
+            .join(", ")}{" "}
+          visible
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// --- Helpers ------------------------------------------------------------
+
+// Coordinates to show for a row: the upload pipeline's GPS (EXIF / overlay
+// OCR) when present, otherwise the coordinates the analysis run extracted.
+function displayCoords(
+  r: Uploaded,
+  run: AnalysisRun | null,
+): {
   lat: number | null;
   lon: number | null;
-  fromGemini: boolean;
+  fromAnalysis: boolean;
   sourceLabel: string | null;
 } {
   if (r.latitude != null && r.longitude != null) {
     return {
       lat: r.latitude,
       lon: r.longitude,
-      fromGemini: false,
+      fromAnalysis: false,
       sourceLabel: r.gpsSource ? `GPS from ${r.gpsSource}` : null,
     };
   }
-  const a = r.analysis;
-  if (a?.gps_present && a.latitude != null && a.longitude != null) {
-    return {
-      lat: a.latitude,
-      lon: a.longitude,
-      fromGemini: true,
-      sourceLabel: "GPS from Gemini overlay analysis",
-    };
+  if (run?.result) {
+    if (run.kind === "util") {
+      const a = run.result as GeminiAnalysis;
+      if (a.gps_present && a.latitude != null && a.longitude != null) {
+        return {
+          lat: a.latitude,
+          lon: a.longitude,
+          fromAnalysis: true,
+          sourceLabel: `GPS from ${run.pathId}`,
+        };
+      }
+    } else {
+      const m = (run.result as BackendAssessment).burnt_in_metadata;
+      if (m.gps_lat != null && m.gps_lon != null) {
+        return {
+          lat: m.gps_lat,
+          lon: m.gps_lon,
+          fromAnalysis: true,
+          sourceLabel: `GPS from ${run.pathId}`,
+        };
+      }
+    }
   }
-  return { lat: null, lon: null, fromGemini: false, sourceLabel: null };
+  return { lat: null, lon: null, fromAnalysis: false, sourceLabel: null };
+}
+
+function shortPath(pathId: string) {
+  return pathId.startsWith("util:") ? pathId.slice("util:".length) : pathId;
+}
+
+function pathLabelOf(pathId: string, paths: AnalysisPath[]) {
+  return paths.find((p) => p.id === pathId)?.label ?? pathId;
 }
 
 function tsSourceLabel(source: Uploaded["timestampSource"]) {
@@ -774,4 +1069,13 @@ const inputStyle: React.CSSProperties = {
   border: "1px solid #2c3340",
   borderRadius: 6,
   color: "#e7ebf0",
+};
+
+const selectStyle: React.CSSProperties = {
+  padding: "10px 12px",
+  background: "#0f1115",
+  border: "1px solid #2c3340",
+  borderRadius: 6,
+  color: "#e7ebf0",
+  fontSize: 13,
 };
