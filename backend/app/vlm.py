@@ -24,7 +24,6 @@ DEFAULT_MODEL = os.environ.get("GEMINI_VLM_MODEL", "gemini-2.5-flash")
 class DuctSignal(BaseModel):
     visible: bool = False
     confidence: float = 0.0
-    notes: str = ""
 
 
 class DepthSignal(BaseModel):
@@ -33,7 +32,6 @@ class DepthSignal(BaseModel):
     depth_range_cm: Optional[list[float]] = None  # [low, high]
     uncertain: bool = True
     confidence: float = 0.0
-    notes: str = ""
 
 
 class SandBeddingSignal(BaseModel):

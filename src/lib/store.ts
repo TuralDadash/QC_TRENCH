@@ -32,14 +32,13 @@ export type BackendAssessment = {
   is_likely_ai_generated: boolean;
   is_likely_ai_generated_confidence: number;
   overall_confidence: number;
-  duct: { visible: boolean; confidence: number; notes: string };
+  duct: { visible: boolean; confidence: number };
   depth: {
     ruler_visible: boolean;
     depth_value_cm: number | null;
     depth_range_cm: number[] | null;
     uncertain: boolean;
     confidence: number;
-    notes: string;
   };
   sand_bedding: {
     status: "sand" | "uncertain" | "not_sand";
