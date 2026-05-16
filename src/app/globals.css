@@ -193,7 +193,17 @@ main {
   top: 6px;
   bottom: 6px;
   width: 1px;
-  background: #e8e7e4;
+  background: #dbeafe;
+}
+
+.page-scroll-fill {
+  position: absolute;
+  left: 4px;
+  top: 6px;
+  width: 1px;
+  background: #1d4ed8;
+  transition: height 80ms linear;
+  border-radius: 1px;
 }
 
 .page-scroll-dot {
@@ -201,11 +211,11 @@ main {
   left: 0;
   width: 9px;
   height: 9px;
-  border: 1.5px solid #1a1a1a;
+  border: 1.5px solid #1d4ed8;
   border-radius: 50%;
   background: white;
   transform: translateY(-50%);
-  transition: top 100ms linear;
+  transition: top 80ms linear;
 }
 
 .section {

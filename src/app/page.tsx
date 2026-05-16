@@ -458,6 +458,7 @@ export default function FlowPage() {
   return (
     <div className="page">
       <div className="page-scroll-track">
+        <div className="page-scroll-fill" style={{ height: `calc(clamp(0%, ${(scrollProgress * 100).toFixed(2)}%, 100%) - 6px)` }} />
         <div
           className="page-scroll-dot"
           style={{ top: `clamp(4.5px, ${(scrollProgress * 100).toFixed(2)}%, calc(100% - 4.5px))` }}
