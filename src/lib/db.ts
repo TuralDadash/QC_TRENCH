@@ -106,6 +106,8 @@ export async function initializeDatabase() {
       has_address_sheet_confidence INTEGER,
       has_sand_bedding BOOLEAN,
       has_sand_bedding_confidence INTEGER,
+      has_tape BOOLEAN,
+      has_tape_confidence INTEGER,
       depth_cm DECIMAL(8, 2),
       depth_cm_confidence INTEGER,
       gps_present BOOLEAN,
@@ -115,6 +117,10 @@ export async function initializeDatabase() {
       address TEXT,
       datetime_present BOOLEAN,
       datetime TIMESTAMP,
+
+      -- Auditability
+      prompt TEXT,
+      output_text TEXT,
 
       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMP NOT NULL DEFAULT NOW(),

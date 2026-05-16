@@ -14,6 +14,8 @@ export type GeminiAnalysis = {
   addresses: string[];
   has_sand_bedding: boolean;
   has_sand_bedding_confidence: number;
+  has_tape: boolean;
+  has_tape_confidence: number;
   depth_cm: number | null;
   depth_cm_confidence: number;
   gps_present: boolean;
@@ -33,13 +35,14 @@ export type BackendAssessment = {
   is_likely_ai_generated: boolean;
   is_likely_ai_generated_confidence: number;
   overall_confidence: number;
-  duct: { visible: boolean; confidence: number };
+  duct: { visible: boolean; confidence: number; notes: string };
   depth: {
     ruler_visible: boolean;
     depth_value_cm: number | null;
     depth_range_cm: number[] | null;
     uncertain: boolean;
     confidence: number;
+    notes: string;
   };
   sand_bedding: {
     status: "sand" | "uncertain" | "not_sand";
@@ -71,6 +74,8 @@ export type AnalysisRun = {
   analyzedAt: string | null;
   error: string | null;
   result: GeminiAnalysis | BackendAssessment | null;
+  prompt?: string | null;
+  outputText?: string | null;
 };
 
 export type PhotoRecord = {
@@ -224,6 +229,8 @@ function extractGeminiFields(run: AnalysisRun): {
   has_address_sheet_confidence: number | null;
   has_sand_bedding: boolean | null;
   has_sand_bedding_confidence: number | null;
+  has_tape: boolean | null;
+  has_tape_confidence: number | null;
   depth_cm: number | null;
   depth_cm_confidence: number | null;
   gps_present: boolean | null;
@@ -243,6 +250,8 @@ function extractGeminiFields(run: AnalysisRun): {
     has_address_sheet_confidence: null,
     has_sand_bedding: null,
     has_sand_bedding_confidence: null,
+    has_tape: null,
+    has_tape_confidence: null,
     depth_cm: null,
     depth_cm_confidence: null,
     gps_present: null,
@@ -268,6 +277,8 @@ function extractGeminiFields(run: AnalysisRun): {
     has_address_sheet_confidence: g.has_address_sheet_confidence ?? null,
     has_sand_bedding: g.has_sand_bedding ?? null,
     has_sand_bedding_confidence: g.has_sand_bedding_confidence ?? null,
+    has_tape: g.has_tape ?? null,
+    has_tape_confidence: g.has_tape_confidence ?? null,
     depth_cm: g.depth_cm ?? null,
     depth_cm_confidence: g.depth_cm_confidence ?? null,
     gps_present: g.gps_present ?? null,
@@ -418,14 +429,17 @@ export async function saveIndex(records: PhotoRecord[]) {
             has_vertical_measuring_stick, has_vertical_measuring_stick_confidence,
             has_address_sheet, has_address_sheet_confidence,
             has_sand_bedding, has_sand_bedding_confidence,
+            has_tape, has_tape_confidence,
             depth_cm, depth_cm_confidence,
             gps_present, latitude, longitude,
             address_present, address,
-            datetime_present, datetime
+            datetime_present, datetime,
+            prompt, output_text
           ) VALUES (
             $1, $2, $3, $4, $5, $6,
             $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-            $17, $18, $19, $20, $21, $22, $23
+            $17, $18, $19, $20, $21, $22, $23, $24, $25,
+            $26, $27
           )
           ON CONFLICT (photo_id, path_id) DO UPDATE SET
             kind = EXCLUDED.kind,
@@ -440,6 +454,8 @@ export async function saveIndex(records: PhotoRecord[]) {
             has_address_sheet_confidence = EXCLUDED.has_address_sheet_confidence,
             has_sand_bedding = EXCLUDED.has_sand_bedding,
             has_sand_bedding_confidence = EXCLUDED.has_sand_bedding_confidence,
+            has_tape = EXCLUDED.has_tape,
+            has_tape_confidence = EXCLUDED.has_tape_confidence,
             depth_cm = EXCLUDED.depth_cm,
             depth_cm_confidence = EXCLUDED.depth_cm_confidence,
             gps_present = EXCLUDED.gps_present,
@@ -449,6 +465,8 @@ export async function saveIndex(records: PhotoRecord[]) {
             address = EXCLUDED.address,
             datetime_present = EXCLUDED.datetime_present,
             datetime = EXCLUDED.datetime,
+            prompt = EXCLUDED.prompt,
+            output_text = EXCLUDED.output_text,
             updated_at = NOW()`,
           [
             record.id,
@@ -465,6 +483,8 @@ export async function saveIndex(records: PhotoRecord[]) {
             g.has_address_sheet_confidence,
             g.has_sand_bedding,
             g.has_sand_bedding_confidence,
+            g.has_tape,
+            g.has_tape_confidence,
             g.depth_cm,
             g.depth_cm_confidence,
             g.gps_present,
@@ -474,6 +494,8 @@ export async function saveIndex(records: PhotoRecord[]) {
             g.address,
             g.datetime_present,
             g.datetime,
+            run.prompt ?? null,
+            run.outputText ?? null,
           ],
         );
 
@@ -526,7 +548,7 @@ export async function appendRecords(newOnes: PhotoRecord[]) {
           has_gps, has_exif, exif_field_count, exif_keys, timestamp_source,
           gps_source, overlay_app, overlay_latitude, overlay_longitude,
           overlay_address, overlay_taken_at, overlay_found, overlay_detected,
-          category, has_duplicate, duplicate_of_id
+          category, has_duplicate, duplicate_count
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
           $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
@@ -612,14 +634,17 @@ export async function mergeAnalysisRun(updates: AnalysisRunUpdate[]) {
           has_vertical_measuring_stick, has_vertical_measuring_stick_confidence,
           has_address_sheet, has_address_sheet_confidence,
           has_sand_bedding, has_sand_bedding_confidence,
+          has_tape, has_tape_confidence,
           depth_cm, depth_cm_confidence,
           gps_present, latitude, longitude,
           address_present, address,
-          datetime_present, datetime
+          datetime_present, datetime,
+          prompt, output_text
         ) VALUES (
           $1, $2, $3, $4, $5, $6,
           $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-          $17, $18, $19, $20, $21, $22, $23
+          $17, $18, $19, $20, $21, $22, $23, $24, $25,
+          $26, $27
         )
         ON CONFLICT (photo_id, path_id) DO UPDATE SET
           kind = EXCLUDED.kind,
@@ -634,6 +659,8 @@ export async function mergeAnalysisRun(updates: AnalysisRunUpdate[]) {
           has_address_sheet_confidence = EXCLUDED.has_address_sheet_confidence,
           has_sand_bedding = EXCLUDED.has_sand_bedding,
           has_sand_bedding_confidence = EXCLUDED.has_sand_bedding_confidence,
+          has_tape = EXCLUDED.has_tape,
+          has_tape_confidence = EXCLUDED.has_tape_confidence,
           depth_cm = EXCLUDED.depth_cm,
           depth_cm_confidence = EXCLUDED.depth_cm_confidence,
           gps_present = EXCLUDED.gps_present,
@@ -643,6 +670,8 @@ export async function mergeAnalysisRun(updates: AnalysisRunUpdate[]) {
           address = EXCLUDED.address,
           datetime_present = EXCLUDED.datetime_present,
           datetime = EXCLUDED.datetime,
+          prompt = EXCLUDED.prompt,
+          output_text = EXCLUDED.output_text,
           updated_at = NOW()`,
         [
           update.id,
@@ -659,6 +688,8 @@ export async function mergeAnalysisRun(updates: AnalysisRunUpdate[]) {
           g.has_address_sheet_confidence,
           g.has_sand_bedding,
           g.has_sand_bedding_confidence,
+          g.has_tape,
+          g.has_tape_confidence,
           g.depth_cm,
           g.depth_cm_confidence,
           g.gps_present,
@@ -668,6 +699,8 @@ export async function mergeAnalysisRun(updates: AnalysisRunUpdate[]) {
           g.address,
           g.datetime_present,
           g.datetime,
+          run.prompt ?? null,
+          run.outputText ?? null,
         ],
       );
 
