@@ -10,7 +10,8 @@ import {
 type Mode = "files" | "folder" | "archive";
 
 export default function UploadPage() {
-  const { phase, results, skipped, startUpload, resetAll } = useUpload();
+  const { phase, results, skipped, processPhase, startUpload, startProcess, resetAll } =
+    useUpload();
 
   const filesRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
@@ -83,14 +84,30 @@ export default function UploadPage() {
     const exifNoGps = results.filter((r) => r.hasExif && !r.hasGps).length;
     const noMeta = results.filter((r) => !r.hasExif).length;
     const withTime = results.filter((r) => r.takenAt).length;
-    return { total, withGps, exifNoGps, noMeta, withTime };
+    const analyzed = results.filter((r) => r.analysis).length;
+    return { total, withGps, exifNoGps, noMeta, withTime, analyzed };
   }, [results]);
 
-  // Drive the main progress bar from the global phase.
+  const processBusy = processPhase.kind === "running";
+
+  // Drive the main progress bar from the global phase. The Gemini "Process"
+  // run takes precedence — it never overlaps an upload.
   let barPct = 0;
   let primaryLabel = "";
   let secondaryLabel = "";
-  if (phase.kind === "uploading") {
+  if (processPhase.kind === "running") {
+    barPct =
+      processPhase.total > 0
+        ? (processPhase.done / processPhase.total) * 100
+        : 0;
+    primaryLabel = `Analyzing with Gemini — ${processPhase.done} / ${processPhase.total}`;
+    const eta = formatEta(processPhase.etaMs);
+    secondaryLabel = eta || "Calculating remaining time…";
+  } else if (processPhase.kind === "complete") {
+    barPct = 100;
+    primaryLabel = "Analysis complete";
+    secondaryLabel = "";
+  } else if (phase.kind === "uploading") {
     barPct = phase.pct * 100;
     primaryLabel = `Uploading ${Math.round(barPct)}%`;
     secondaryLabel = "Sending files to server";
@@ -115,10 +132,12 @@ export default function UploadPage() {
     secondaryLabel = "";
   }
 
-  const busy =
+  const uploadBusy =
     phase.kind === "uploading" ||
     phase.kind === "preparing" ||
     phase.kind === "processing";
+
+  const busy = uploadBusy || processBusy;
 
   const indeterminate =
     phase.kind === "preparing" && !phase.extracting;
@@ -251,10 +270,10 @@ export default function UploadPage() {
       </div>
 
       <div className="action-row">
-        {phase.kind !== "idle" && (
+        {(phase.kind !== "idle" || processPhase.kind !== "idle") && (
           <div className="progress">
             <div
-              className={`bar ${busy ? "active" : ""} ${phase.kind === "complete" ? "done" : ""} ${indeterminate ? "indeterminate" : ""}`}
+              className={`bar ${busy ? "active" : ""} ${phase.kind === "complete" || processPhase.kind === "complete" ? "done" : ""} ${indeterminate ? "indeterminate" : ""}`}
             >
               <div
                 className="fill"
@@ -269,10 +288,24 @@ export default function UploadPage() {
         )}
         <button
           className="btn"
+          onClick={() => startProcess()}
+          disabled={busy || results.length === 0}
+          title="Send every un-analyzed photo to Gemini for trench analysis"
+        >
+          {processBusy ? (
+            <>
+              <span className="spinner" /> Analyzing…
+            </>
+          ) : (
+            "Process"
+          )}
+        </button>
+        <button
+          className="btn"
           onClick={submit}
           disabled={busy || files.length === 0}
         >
-          {busy ? (
+          {uploadBusy ? (
             <>
               <span className="spinner" /> Working…
             </>
@@ -297,6 +330,9 @@ export default function UploadPage() {
               {summary.noMeta} no metadata
             </span>
             <span className="muted">{summary.withTime} with timestamp</span>
+            <span className={summary.analyzed > 0 ? "ok" : "muted"}>
+              {summary.analyzed} analyzed
+            </span>
             {skipped.length > 0 && (
               <span className="err">{skipped.length} skipped</span>
             )}
@@ -318,6 +354,7 @@ export default function UploadPage() {
                 <th>File</th>
                 <th>Metadata</th>
                 <th>Overlay</th>
+                <th>Analysis</th>
                 <th>Taken</th>
                 <th>Latitude</th>
                 <th>Longitude</th>
@@ -364,6 +401,7 @@ export default function UploadPage() {
                       <span className="muted">—</span>
                     )}
                   </td>
+                  <td>{renderAnalysis(r)}</td>
                   <td>
                     {r.takenAt ? (
                       <>
@@ -461,6 +499,7 @@ export default function UploadPage() {
                   <strong>Overlay address:</strong> {preview.overlayAddress}
                 </div>
               ) : null}
+              {renderAnalysisDetail(preview)}
               <div className="dim">
                 {preview.width && preview.height
                   ? `${preview.width} × ${preview.height} · `
@@ -517,6 +556,110 @@ function renderMetadataBadge(r: Uploaded) {
     <span className="badge err" title="No overlay, no EXIF — image has no extractable metadata">
       no metadata
     </span>
+  );
+}
+
+function analysisFlag(label: string, on: boolean, confidence: number) {
+  return (
+    <span
+      className={`badge ${on ? "ok" : "off"}`}
+      title={`${on ? "detected" : "not detected"} · confidence ${confidence}%`}
+    >
+      {label}
+    </span>
+  );
+}
+
+function renderAnalysis(r: Uploaded) {
+  if (r.analysis) {
+    const a = r.analysis;
+    return (
+      <div className="analysis-cell">
+        {analysisFlag("trench", a.has_trench, a.has_trench_confidence)}
+        {analysisFlag(
+          "stick",
+          a.has_vertical_measuring_stick,
+          a.has_vertical_measuring_stick_confidence,
+        )}
+        {analysisFlag(
+          "sheet",
+          a.has_address_sheet,
+          a.has_address_sheet_confidence,
+        )}
+        {analysisFlag(
+          "sand",
+          a.has_sand_bedding,
+          a.has_sand_bedding_confidence,
+        )}
+        {a.depth_cm != null ? (
+          <span
+            className="badge neutral"
+            title={`depth confidence ${a.depth_cm_confidence}%`}
+          >
+            {a.depth_cm} cm
+          </span>
+        ) : null}
+      </div>
+    );
+  }
+  if (r.analysisError) {
+    return (
+      <span className="badge err" title={r.analysisError}>
+        failed
+      </span>
+    );
+  }
+  return <span className="muted">—</span>;
+}
+
+function renderAnalysisDetail(r: Uploaded) {
+  if (r.analysisError) {
+    return (
+      <div className="err" style={{ fontSize: 12 }}>
+        Gemini analysis failed: {r.analysisError}
+      </div>
+    );
+  }
+  if (!r.analysis) return null;
+  const a = r.analysis;
+  const row = (label: string, on: boolean, confidence: number) => (
+    <div className="modal-row">
+      <span className={`badge ${on ? "ok" : "off"}`}>{on ? "yes" : "no"}</span>
+      <span>
+        {label} <span className="dim">({confidence}% confidence)</span>
+      </span>
+    </div>
+  );
+  return (
+    <div className="analysis-detail">
+      <strong>Gemini analysis</strong>
+      {row("Trench", a.has_trench, a.has_trench_confidence)}
+      {row(
+        "Vertical measuring stick",
+        a.has_vertical_measuring_stick,
+        a.has_vertical_measuring_stick_confidence,
+      )}
+      {row(
+        "Address sheet",
+        a.has_address_sheet,
+        a.has_address_sheet_confidence,
+      )}
+      {row("Sand bedding", a.has_sand_bedding, a.has_sand_bedding_confidence)}
+      <div className="modal-row">
+        <span className="badge neutral">
+          {a.depth_cm != null ? `${a.depth_cm} cm` : "—"}
+        </span>
+        <span>
+          Trench depth{" "}
+          <span className="dim">({a.depth_cm_confidence}% confidence)</span>
+        </span>
+      </div>
+      {a.addresses.length > 0 ? (
+        <div>
+          <strong>Addresses:</strong> {a.addresses.join(" · ")}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

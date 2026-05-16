@@ -12,8 +12,8 @@ Some contractors submit wrong, old, or misleading photos. Judge only on what is 
 - **Vertical measuring stick**: a ruler standing upright in the trench, usually a light-grey body with red-and-black (or red-and-white) markings at regular intervals. Markings must be legible.
 - **Horizontal reference**: a second measuring stick (or sometimes a shovel handle / similar straight object) laid flat across the top of the trench at ground level. Used as the reference line for reading the trench depth off the vertical stick.
 - **Address sheet**: a printed or hand-written sheet of paper listing one or more street addresses. A sign, equipment label, or phone screen does not count.
-- **Sand bedding**: a distinct lighter-coloured layer of sand at the bottom of the trench, clearly different from the surrounding native soil. Not: uniform dirt, gravel, or rubble.
-
+- **Sand bedding**: a distinct coloured layer of sand at the bottom of the trench, clearly different from the surrounding native soil. Not: uniform dirt, gravel, or rubble. Can be the color of dirt and have rocks in it but should looke like loose earth and not like hard/compacted earth.
+ Can be the color of dirt and have rocks in it but should looke like loose earth and not like hard/compacted earth.
 # Output
 
 For every detection, also return a **confidence score from 0 to 100** — your subjective certainty that the detection is correct (100 = certain, 0 = guessing).
@@ -33,6 +33,7 @@ Rules for `depth_cm`:
 
 - Only return a value if you can clearly see (a) the vertical stick's markings and (b) the horizontal reference crossing it. Otherwise return `null`.
 - Return an integer in centimetres. Round to the nearest cm.
+- Use the markings on the tape measure as a guide. Every 10 cm direction of makring changes, every 20 cm color of marking changes.
 - If the vertical stick is present but no horizontal reference is visible, return `null` (do not estimate from the top of the trench wall — perspective makes that unreliable).
 - `depth_cm_confidence` should reflect how legible the markings are and how clearly the intersection point is defined. Low confidence (≤30) if you had to interpolate between markings or the intersection is ambiguous.
 

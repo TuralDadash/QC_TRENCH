@@ -8,6 +8,7 @@ services:
     volumes:
       - ./src:/app/src
       - ./public:/app/public
+      - ./util:/app/util
       - ./next.config.js:/app/next.config.js
       - ./tsconfig.json:/app/tsconfig.json
       - ./next-env.d.ts:/app/next-env.d.ts
@@ -15,4 +16,7 @@ services:
     environment:
       - NODE_ENV=development
       - DATA_DIR=/app/data
+      # Passed through from the host env / a root .env file. Required for the
+      # "Process" button (Gemini analysis); the app still runs without it.
+      - GEMINI_API_KEY
     restart: unless-stopped

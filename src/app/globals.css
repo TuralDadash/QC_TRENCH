@@ -314,6 +314,34 @@ main {
   padding: 0;
 }
 
+.badge.off {
+  color: #6b7280;
+  border-color: #2c3340;
+  background: transparent;
+}
+
+.badge.neutral {
+  color: #6ea8fe;
+  border-color: rgba(110, 168, 254, 0.4);
+  background: rgba(110, 168, 254, 0.08);
+}
+
+.analysis-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 220px;
+}
+
+.analysis-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid #222831;
+}
+
 .dropzone.disabled {
   opacity: 0.55;
   cursor: not-allowed;

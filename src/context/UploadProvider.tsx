@@ -10,6 +10,20 @@ import {
   useState,
 } from "react";
 
+export type GeminiAnalysis = {
+  has_trench: boolean;
+  has_trench_confidence: number;
+  has_vertical_measuring_stick: boolean;
+  has_vertical_measuring_stick_confidence: number;
+  has_address_sheet: boolean;
+  has_address_sheet_confidence: number;
+  addresses: string[];
+  has_sand_bedding: boolean;
+  has_sand_bedding_confidence: number;
+  depth_cm: number | null;
+  depth_cm_confidence: number;
+};
+
 export type Uploaded = {
   id: string;
   filename: string;
@@ -43,6 +57,9 @@ export type Uploaded = {
   overlayTakenAt: string | null;
   overlayFound: boolean;
   overlayDetected: boolean;
+  analysis?: GeminiAnalysis | null;
+  analyzedAt?: string | null;
+  analysisError?: string | null;
 };
 
 export type Skipped = { name: string; reason: string };
@@ -64,6 +81,18 @@ export type UploadPhase =
     }
   | { kind: "complete" };
 
+// Phase of the Gemini "Process" run — independent of the upload pipeline.
+export type ProcessPhase =
+  | { kind: "idle" }
+  | {
+      kind: "running";
+      done: number;
+      total: number;
+      etaMs: number | null;
+      startedAt: number;
+    }
+  | { kind: "complete" };
+
 type StreamEvent =
   | { event: "phase"; phase: "preparing" }
   | { event: "extracting"; archive: string; done: number; total: number }
@@ -77,14 +106,21 @@ type StreamEvent =
   | { event: "done"; skipped: Skipped[] }
   | { event: "error"; message: string };
 
+type ProcessEvent =
+  | { event: "start"; total: number }
+  | { event: "analyzed"; done: number; total: number; record: Uploaded }
+  | { event: "done" };
+
 type ContextValue = {
   phase: UploadPhase;
   results: Uploaded[];
   skipped: Skipped[];
+  processPhase: ProcessPhase;
   startUpload: (
     files: File[],
     opts: { project?: string; lotId?: string; limit?: number | null },
   ) => void;
+  startProcess: () => void;
   resetAll: () => Promise<void>;
   refresh: () => Promise<void>;
 };
@@ -95,7 +131,11 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
   const [phase, setPhase] = useState<UploadPhase>({ kind: "idle" });
   const [results, setResults] = useState<Uploaded[]>([]);
   const [skipped, setSkipped] = useState<Skipped[]>([]);
+  const [processPhase, setProcessPhase] = useState<ProcessPhase>({
+    kind: "idle",
+  });
   const xhrRef = useRef<XMLHttpRequest | null>(null);
+  const processXhrRef = useRef<XMLHttpRequest | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -262,9 +302,121 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const startProcess = useCallback(() => {
+    // Don't start a second analysis run while one is in-flight.
+    if (processXhrRef.current) return;
+
+    setProcessPhase({
+      kind: "running",
+      done: 0,
+      total: 0,
+      etaMs: null,
+      startedAt: performance.now(),
+    });
+
+    const xhr = new XMLHttpRequest();
+    processXhrRef.current = xhr;
+
+    let buffer = "";
+    let lastLen = 0;
+    let startedAt = performance.now();
+
+    const handleEvent = (ev: ProcessEvent) => {
+      if (ev.event === "start") {
+        startedAt = performance.now();
+        setProcessPhase({
+          kind: "running",
+          done: 0,
+          total: ev.total,
+          etaMs: null,
+          startedAt,
+        });
+      } else if (ev.event === "analyzed") {
+        setResults((prev) =>
+          prev.map((r) => (r.id === ev.record.id ? ev.record : r)),
+        );
+        setProcessPhase(() => {
+          const elapsed = performance.now() - startedAt;
+          const avg = ev.done > 0 ? elapsed / ev.done : 0;
+          const remaining = Math.max(0, ev.total - ev.done);
+          const etaMs = avg > 0 && remaining > 0 ? avg * remaining : null;
+          return {
+            kind: "running",
+            done: ev.done,
+            total: ev.total,
+            etaMs,
+            startedAt,
+          };
+        });
+      }
+    };
+
+    const drain = () => {
+      const txt = xhr.responseText;
+      const chunk = txt.slice(lastLen);
+      lastLen = txt.length;
+      buffer += chunk;
+      let nl: number;
+      while ((nl = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        if (!line) continue;
+        let ev: ProcessEvent;
+        try {
+          ev = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        handleEvent(ev);
+      }
+    };
+
+    xhr.open("POST", "/api/process");
+    xhr.addEventListener("progress", drain);
+    xhr.addEventListener("load", () => {
+      drain();
+      processXhrRef.current = null;
+      setProcessPhase({ kind: "complete" });
+      setTimeout(
+        () =>
+          setProcessPhase((p) =>
+            p.kind === "complete" ? { kind: "idle" } : p,
+          ),
+        1800,
+      );
+    });
+    xhr.addEventListener("error", () => {
+      processXhrRef.current = null;
+      setProcessPhase({ kind: "idle" });
+    });
+    xhr.addEventListener("abort", () => {
+      processXhrRef.current = null;
+      setProcessPhase({ kind: "idle" });
+    });
+    xhr.send();
+  }, []);
+
   const value = useMemo<ContextValue>(
-    () => ({ phase, results, skipped, startUpload, resetAll, refresh }),
-    [phase, results, skipped, startUpload, resetAll, refresh],
+    () => ({
+      phase,
+      results,
+      skipped,
+      processPhase,
+      startUpload,
+      startProcess,
+      resetAll,
+      refresh,
+    }),
+    [
+      phase,
+      results,
+      skipped,
+      processPhase,
+      startUpload,
+      startProcess,
+      resetAll,
+      refresh,
+    ],
   );
 
   return (
