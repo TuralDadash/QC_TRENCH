@@ -36,7 +36,6 @@ export default function NavBar() {
   return (
     <nav className="navbar">
       <a className="nav-brand" onClick={() => scrollTo("upload")}>
-        <span className="nav-dot" />
         <span className="nav-brand-name">öGIG QC</span>
       </a>
 
