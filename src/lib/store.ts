@@ -526,7 +526,7 @@ export async function appendRecords(newOnes: PhotoRecord[]) {
           has_gps, has_exif, exif_field_count, exif_keys, timestamp_source,
           gps_source, overlay_app, overlay_latitude, overlay_longitude,
           overlay_address, overlay_taken_at, overlay_found, overlay_detected,
-          category, has_duplicate, duplicate_count
+          category, has_duplicate, duplicate_of_id
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
           $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
