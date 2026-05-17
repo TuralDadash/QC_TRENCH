@@ -38,6 +38,8 @@ type Category = 1 | 2 | 3 | 4;
 type CriterionKey = "trench" | "measuringStick" | "sandBedding" | "warningTape" | "sideView";
 type FilterKey = "all" | "failed" | "duplicate" | "no-gps" | "cat3" | "cat4";
 
+const CYCLING_WORDS = ["AI verified.", "AI classified.", "AI audited."];
+
 const UPLOAD_STEPS: { id: PhaseStep; label: string }[] = [
   { id: "uploading", label: "Uploading" },
   { id: "extracting", label: "Extracting" },
@@ -79,9 +81,6 @@ function currentStep(phase: ReturnType<typeof useUpload>["phase"]): PhaseStep {
 
 function deriveCategory(p: Photo): Category {
   if (!p.analysis) return 2;
-  // Missing GPS alone does not demote — an address label or overlay
-  // timestamp still lets us locate the photo roughly. Only explicit
-  // off-site GPS (gpsOnSite === false) or a duplicate forces cat 4.
   if (p.analysis.isDuplicate || p.analysis.gpsOnSite === false) return 4;
   if (p.analysis.trench && p.analysis.measuringStick) return 1;
   if (p.analysis.trench) return 2;
@@ -267,18 +266,27 @@ export default function FlowPage() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [viewMode, setViewMode] = useState<"map" | "table">("map");
+  const [viewMode, setViewMode] = useState<"map" | "table">("table");
   const [tableFilter, setTableFilter] = useState<"all" | 1 | 2 | 3 | 4 | "no-gps" | "dup">("all");
 
   const mapSectionRef = useRef<HTMLElement>(null);
   const reportSectionRef = useRef<HTMLElement>(null);
   const prevAnalysedRef = useRef(0);
-  // Set when an upload finishes; consumed once analysis completes to fire
-  // the auto-PDF download. Avoids re-firing on page reloads where analysis
-  // was already complete from a previous session.
   const pdfPendingRef = useRef(false);
   const [mapExpanded, setMapExpanded] = useState(false);
-  const [scrollProgress, setScrollProgress] = useState(0);
+  const [wordIdx, setWordIdx] = useState(0);
+  const [wordExiting, setWordExiting] = useState(false);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setWordExiting(true);
+      setTimeout(() => {
+        setWordIdx((i) => (i + 1) % CYCLING_WORDS.length);
+        setWordExiting(false);
+      }, 400);
+    }, 2800);
+    return () => clearInterval(id);
+  }, []);
   const [mapCatFilter, setMapCatFilter] = useState<"all"|"cat1"|"cat2"|"cat3"|"cat4"|"no-gps">("all");
 
   useEffect(() => {
@@ -304,10 +312,6 @@ export default function FlowPage() {
     return () => clearInterval(id);
   }, []);
 
-  // The provider's `results` (the upload table) is driven by upload/analysis
-  // stream events, which don't carry the /api/photos coordinate + analysis
-  // enrichment. Re-pull it from the enriched endpoint once nothing is in
-  // flight, so lat/lon and analysis appear without a manual page reload.
   useEffect(() => {
     if (phase.kind === "idle" && processPhase.kind === "idle") refresh();
   }, [phase.kind, processPhase.kind, refresh]);
@@ -327,7 +331,7 @@ export default function FlowPage() {
             }
           }
         },
-        { threshold: 0.08, rootMargin: "0px 0px -32px 0px" },
+        { root: document.querySelector("main"), threshold: 0.08, rootMargin: "0px 0px -32px 0px" },
       );
       els.forEach((el) => io.observe(el));
     });
@@ -335,30 +339,19 @@ export default function FlowPage() {
       cancelAnimationFrame(rafId);
       io?.disconnect();
     };
-    // viewMode is included so the reveal observer re-attaches to the
-    // map/table panels that mount only when their tab is selected.
   }, [photos.length, analysedCount, viewMode]);
 
-  // The redesign exposes a single "Upload" action. The backend keeps upload
-  // and AI analysis as separate endpoints, so once an upload completes we
-  // kick off analysis automatically — results then stream into the report
-  // and map through the /api/photos poll above. The "backend" path is used
-  // because the "util:" prompt paths have a pre-existing datetime-persistence
-  // bug in store.ts (Invalid Date rejected by Postgres).
   useEffect(() => {
     if (phase.kind === "complete") {
       pdfPendingRef.current = true;
       startProcess("backend");
       setTimeout(() => {
-        mapSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        reportSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 800);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase.kind]);
 
-  // Auto-download both PDFs once the analysis kicked off by the upload
-  // completes. Gated by pdfPendingRef so revisiting the page after a
-  // previous run doesn't trigger another download.
   useEffect(() => {
     if (processPhase.kind !== "complete" || !pdfPendingRef.current) return;
     pdfPendingRef.current = false;
@@ -380,11 +373,8 @@ export default function FlowPage() {
         a.click();
         URL.revokeObjectURL(url);
       } catch {
-        // backend may be down — silently skip; user can still trigger manually
       }
     };
-    // Sequence the two downloads — back-to-back a.click() calls get
-    // throttled by Chrome/Firefox and only one file lands.
     (async () => {
       const stamp = new Date().toISOString().split("T")[0];
       await download("/api/report/pdf", `trench-audit-${stamp}.pdf`);
@@ -396,23 +386,11 @@ export default function FlowPage() {
   useEffect(() => {
     if (analysedCount > 0 && prevAnalysedRef.current === 0) {
       setTimeout(() => {
-        reportSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        mapSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 500);
     }
     prevAnalysedRef.current = analysedCount;
   }, [analysedCount]);
-
-  useEffect(() => {
-    const main = document.querySelector("main");
-    if (!main) return;
-    const onScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = main;
-      const max = scrollHeight - clientHeight;
-      setScrollProgress(max > 0 ? scrollTop / max : 0);
-    };
-    main.addEventListener("scroll", onScroll, { passive: true });
-    return () => main.removeEventListener("scroll", onScroll);
-  }, []);
 
   function pickFiles(list: FileList | null) {
     if (!list) return;
@@ -522,17 +500,14 @@ export default function FlowPage() {
 
   return (
     <div className="page">
-      <div className="page-scroll-track">
-        <div className="page-scroll-fill" style={{ height: `calc(clamp(0%, ${(scrollProgress * 100).toFixed(2)}%, 100%) - 6px)` }} />
-        <div
-          className="page-scroll-dot"
-          style={{ top: `clamp(4.5px, ${(scrollProgress * 100).toFixed(2)}%, calc(100% - 4.5px))` }}
-        />
-      </div>
 
       <section id="upload" className="section snap-section">
-        <span className="section-eyebrow" data-reveal>01 — Upload</span>
-        <h1 className="section-heading" data-reveal data-d="1">Trench documentation.<br />AI-verified.</h1>
+        <h1 className="section-heading" data-reveal data-d="1">
+          Trench documentation.<br />
+          <span key={wordIdx} className={`cycling-word ${wordExiting ? "exit" : "enter"}`}>
+            {CYCLING_WORDS[wordIdx]}
+          </span>
+        </h1>
 
         <div className="upload-card" data-reveal data-d="2">
 
@@ -707,9 +682,138 @@ export default function FlowPage() {
         </div>
       </section>
 
+      <section id="report" ref={reportSectionRef as React.RefObject<HTMLElement>} className="section snap-section">
+        <div>
+            <h2 className="section-heading" data-reveal>Deficiency report.</h2>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 32, flexWrap: "wrap", gap: 12 }} data-reveal data-d="2">
+              <p className="section-sub" style={{ margin: 0 }}>
+                {photos.length} photos · {lots.length} lot{lots.length === 1 ? "" : "s"} · {analysedCount} analysed
+              </p>
+              {photos.length > 0 && (
+                <button className="export-btn" onClick={exportJSON}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  Export JSON
+                </button>
+              )}
+            </div>
+            <div className="report-kpi-row" data-reveal data-d="1">
+              <div className="report-kpi-card ok">
+                <div className="report-kpi-num">{totalCat1}</div>
+                <div className="report-kpi-label">Cat 1 · Duct + Depth</div>
+              </div>
+              <div className="report-kpi-card warn">
+                <div className="report-kpi-num">{totalCat2}</div>
+                <div className="report-kpi-label">Cat 2 · Duct only</div>
+              </div>
+              <div className="report-kpi-card err">
+                <div className="report-kpi-num">{totalFailed}</div>
+                <div className="report-kpi-label">Cat 3/4 · Red / Suspect</div>
+              </div>
+              <div className="report-kpi-card">
+                <div className="report-kpi-num">{photos.length - analysedCount}</div>
+                <div className="report-kpi-label">Not analysed</div>
+              </div>
+            </div>
+
+            <div className="filter-chips" data-reveal data-d="2">
+              {([
+                { id: "all", label: `All (${photos.length})`, cls: "" },
+                { id: "failed", label: `Failed (${totalFailed})`, cls: "err" },
+                { id: "duplicate", label: `Duplicate (${totalDups})`, cls: "cat4" },
+                { id: "no-gps", label: `No GPS (${totalNoGps})`, cls: "warn" },
+                { id: "cat3", label: "Cat 3 · Critical", cls: "err" },
+                { id: "cat4", label: "Cat 4 · Suspect", cls: "cat4" },
+              ] as { id: FilterKey; label: string; cls: string }[]).map((f) => (
+                <button
+                  key={f.id}
+                  className={`filter-chip ${filter === f.id ? `active ${f.cls}` : ""}`}
+                  onClick={() => setFilter(f.id)}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            {filteredLots.map((lot) => {
+              const key = `${lot.project}::${lot.lotId}`;
+              const isOpen = expanded.has(key);
+              const hasIssues = lot.duplicates > 0 || CRITERIA.some((c) => lot.criteria[c.key] < lot.analysed);
+              const isCat4 = lot.worstCat === 4;
+              return (
+                <div key={key} className={`lot-card ${hasIssues ? "has-issues" : ""} ${isCat4 ? "cat4" : ""}`}>
+                  <div className="lot-header" onClick={() => toggleLot(key)}>
+                    <div className="lot-title">
+                      <span className="lot-project">{lot.project}</span>
+                      <span className="lot-sep">/</span>
+                      <span className="lot-id">{lot.lotId}</span>
+                      <span className={`cat-badge ${CAT_CLASSES[lot.worstCat]}`}>{CAT_LABELS[lot.worstCat]}</span>
+                    </div>
+                    <div className="lot-stats">
+                      <span className="lot-stat">{lot.total} photo{lot.total === 1 ? "" : "s"}</span>
+                      <span className={`lot-stat ${lot.withGps === lot.total ? "ok" : "warn"}`}>{lot.withGps}/{lot.total} GPS</span>
+                      {lot.analysed > 0 && (
+                        <span className={`lot-stat ${lot.cat1Count === lot.analysed ? "ok" : "err"}`}>{lot.cat1Count}/{lot.analysed} Cat 1</span>
+                      )}
+                      {lot.duplicates > 0 && <span className="lot-stat err">{lot.duplicates} dup</span>}
+                    </div>
+                    <div className="lot-criteria-row">
+                      {CRITERIA.map((c) => (
+                        <div key={c.key} className="lot-criterion">
+                          <StatusDot ok={lot.analysed > 0 && lot.criteria[c.key] === lot.analysed} />
+                          <span className="lot-criterion-label">{c.label}</span>
+                          {lot.analysed > 0 && (
+                            <span className="lot-criterion-pct">{pct(lot.criteria[c.key], lot.analysed)}%</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <button className="lot-toggle">{isOpen ? "-" : "+"}</button>
+                  </div>
+
+                  {isOpen && (
+                    <div className="lot-photos">
+                      {lot.photos.map((p) => {
+                        const cat = deriveCategory(p);
+                        const flagged = cat >= 3;
+                        return (
+                          <div key={p.id} className={`lot-photo-row ${p.analysis?.isDuplicate ? "is-duplicate" : ""}`}>
+                            <img src={`/api/photos/${p.id}`} alt="" className="lot-thumb" />
+                            <div className="lot-photo-info">
+                              <div className="lot-photo-name">{p.originalName}</div>
+                              {p.takenAt && <div className="dim">{new Date(p.takenAt).toLocaleString()}</div>}
+                              {flagged && <WhyFlagged p={p} />}
+                              {flagged && <NextActions cat={cat} />}
+                            </div>
+                            <div className="lot-photo-criteria">
+                              <span className={`cat-badge ${CAT_CLASSES[cat]}`}>{CAT_LABELS[cat]}</span>
+                              {p.analysis ? CRITERIA.map((c) => (
+                                <span key={c.key} className={`criterion-chip ${p.analysis![c.key] ? "ok" : "err"}`} title={c.label}>
+                                  {c.label}
+                                </span>
+                              )) : <span className="muted">—</span>}
+                              {p.analysis?.isDuplicate && <span className="criterion-chip err">Duplicate</span>}
+                            </div>
+                            <div className="lot-photo-flags">
+                              {!p.hasGps && <span className="badge warn">No GPS</span>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+        </div>
+        {photos.length === 0 && (
+          <div className="empty-state"><strong>No photos yet</strong>Upload photos in step 01. Results appear here automatically.</div>
+        )}
+      </section>
+
       <section id="map" ref={mapSectionRef as React.RefObject<HTMLElement>} className="section snap-section">
-        <span className="section-eyebrow" data-reveal>02 — Map &amp; Table</span>
-        <h2 className="section-heading" data-reveal data-d="1">Network &amp; coverage.</h2>
+        <h2 className="section-heading" data-reveal>Network &amp; coverage.</h2>
 
         <div className="view-toggle" data-reveal data-d="2">
           <button className={`view-tab${viewMode === "map" ? " active" : ""}`} onClick={() => setViewMode("map")}>Map</button>
@@ -841,137 +945,6 @@ export default function FlowPage() {
               </div>
             )}
           </div>
-        )}
-      </section>
-
-      <section id="report" ref={reportSectionRef as React.RefObject<HTMLElement>} className="section snap-section">
-        <div>
-            <span className="section-eyebrow" data-reveal>03 — Report</span>
-            <h2 className="section-heading" data-reveal data-d="1">Deficiency report.</h2>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 32, flexWrap: "wrap", gap: 12 }} data-reveal data-d="2">
-              <p className="section-sub" style={{ margin: 0 }}>
-                {photos.length} photos · {lots.length} lot{lots.length === 1 ? "" : "s"} · {analysedCount} analysed
-              </p>
-              {photos.length > 0 && (
-                <button className="export-btn" onClick={exportJSON}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                  </svg>
-                  Export JSON
-                </button>
-              )}
-            </div>
-            <div className="report-kpi-row" data-reveal data-d="1">
-              <div className="report-kpi-card ok">
-                <div className="report-kpi-num">{totalCat1}</div>
-                <div className="report-kpi-label">Cat 1 · Duct + Depth</div>
-              </div>
-              <div className="report-kpi-card warn">
-                <div className="report-kpi-num">{totalCat2}</div>
-                <div className="report-kpi-label">Cat 2 · Duct only</div>
-              </div>
-              <div className="report-kpi-card err">
-                <div className="report-kpi-num">{totalFailed}</div>
-                <div className="report-kpi-label">Cat 3/4 · Red / Suspect</div>
-              </div>
-              <div className="report-kpi-card">
-                <div className="report-kpi-num">{photos.length - analysedCount}</div>
-                <div className="report-kpi-label">Not analysed</div>
-              </div>
-            </div>
-
-            <div className="filter-chips" data-reveal data-d="2">
-              {([
-                { id: "all", label: `All (${photos.length})`, cls: "" },
-                { id: "failed", label: `Failed (${totalFailed})`, cls: "err" },
-                { id: "duplicate", label: `Duplicate (${totalDups})`, cls: "cat4" },
-                { id: "no-gps", label: `No GPS (${totalNoGps})`, cls: "warn" },
-                { id: "cat3", label: "Cat 3 · Critical", cls: "err" },
-                { id: "cat4", label: "Cat 4 · Suspect", cls: "cat4" },
-              ] as { id: FilterKey; label: string; cls: string }[]).map((f) => (
-                <button
-                  key={f.id}
-                  className={`filter-chip ${filter === f.id ? `active ${f.cls}` : ""}`}
-                  onClick={() => setFilter(f.id)}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-
-            {filteredLots.map((lot) => {
-              const key = `${lot.project}::${lot.lotId}`;
-              const isOpen = expanded.has(key);
-              const hasIssues = lot.duplicates > 0 || CRITERIA.some((c) => lot.criteria[c.key] < lot.analysed);
-              const isCat4 = lot.worstCat === 4;
-              return (
-                <div key={key} className={`lot-card ${hasIssues ? "has-issues" : ""} ${isCat4 ? "cat4" : ""}`}>
-                  <div className="lot-header" onClick={() => toggleLot(key)}>
-                    <div className="lot-title">
-                      <span className="lot-project">{lot.project}</span>
-                      <span className="lot-sep">/</span>
-                      <span className="lot-id">{lot.lotId}</span>
-                      <span className={`cat-badge ${CAT_CLASSES[lot.worstCat]}`}>{CAT_LABELS[lot.worstCat]}</span>
-                    </div>
-                    <div className="lot-stats">
-                      <span className="lot-stat">{lot.total} photo{lot.total === 1 ? "" : "s"}</span>
-                      <span className={`lot-stat ${lot.withGps === lot.total ? "ok" : "warn"}`}>{lot.withGps}/{lot.total} GPS</span>
-                      {lot.analysed > 0 && (
-                        <span className={`lot-stat ${lot.cat1Count === lot.analysed ? "ok" : "err"}`}>{lot.cat1Count}/{lot.analysed} Cat 1</span>
-                      )}
-                      {lot.duplicates > 0 && <span className="lot-stat err">{lot.duplicates} dup</span>}
-                    </div>
-                    <div className="lot-criteria-row">
-                      {CRITERIA.map((c) => (
-                        <div key={c.key} className="lot-criterion">
-                          <StatusDot ok={lot.analysed > 0 && lot.criteria[c.key] === lot.analysed} />
-                          <span className="lot-criterion-label">{c.label}</span>
-                          {lot.analysed > 0 && (
-                            <span className="lot-criterion-pct">{pct(lot.criteria[c.key], lot.analysed)}%</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                    <button className="lot-toggle">{isOpen ? "-" : "+"}</button>
-                  </div>
-
-                  {isOpen && (
-                    <div className="lot-photos">
-                      {lot.photos.map((p) => {
-                        const cat = deriveCategory(p);
-                        const flagged = cat >= 3;
-                        return (
-                          <div key={p.id} className={`lot-photo-row ${p.analysis?.isDuplicate ? "is-duplicate" : ""}`}>
-                            <img src={`/api/photos/${p.id}`} alt="" className="lot-thumb" />
-                            <div className="lot-photo-info">
-                              <div className="lot-photo-name">{p.originalName}</div>
-                              {p.takenAt && <div className="dim">{new Date(p.takenAt).toLocaleString()}</div>}
-                              {flagged && <WhyFlagged p={p} />}
-                              {flagged && <NextActions cat={cat} />}
-                            </div>
-                            <div className="lot-photo-criteria">
-                              <span className={`cat-badge ${CAT_CLASSES[cat]}`}>{CAT_LABELS[cat]}</span>
-                              {p.analysis ? CRITERIA.map((c) => (
-                                <span key={c.key} className={`criterion-chip ${p.analysis![c.key] ? "ok" : "err"}`} title={c.label}>
-                                  {c.label}
-                                </span>
-                              )) : <span className="muted">—</span>}
-                              {p.analysis?.isDuplicate && <span className="criterion-chip err">Duplicate</span>}
-                            </div>
-                            <div className="lot-photo-flags">
-                              {!p.hasGps && <span className="badge warn">No GPS</span>}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-        </div>
-        {photos.length === 0 && (
-          <div className="empty-state"><strong>No photos yet</strong>Upload photos in step 01 — results appear here automatically.</div>
         )}
       </section>
 
