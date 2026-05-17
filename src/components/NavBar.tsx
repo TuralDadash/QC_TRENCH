@@ -5,8 +5,8 @@ import UploadStatusBadge from "@/components/UploadStatusBadge";
 
 const STEPS = [
   { id: "upload", num: "01", label: "Upload" },
-  { id: "map",    num: "02", label: "Map" },
-  { id: "report", num: "03", label: "Report" },
+  { id: "report", num: "02", label: "Report" },
+  { id: "map",    num: "03", label: "Map" },
 ];
 
 export default function NavBar() {
@@ -36,7 +36,7 @@ export default function NavBar() {
   return (
     <nav className="navbar">
       <a className="nav-brand" onClick={() => scrollTo("upload")}>
-        <span className="nav-brand-name">öGIG QC</span>
+        <span className="nav-brand-name">Trench <em>Audit</em></span>
       </a>
 
       <div className="nav-steps">
@@ -46,8 +46,7 @@ export default function NavBar() {
             className={`nav-step${active === s.id ? " active" : ""}`}
             onClick={() => scrollTo(s.id)}
           >
-            <span className="nav-step-num">{s.num}</span>
-            <span className="nav-step-label">{s.label}</span>
+            {s.label}
           </button>
         ))}
       </div>
